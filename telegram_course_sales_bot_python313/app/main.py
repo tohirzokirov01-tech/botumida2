@@ -27,26 +27,45 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Initializing Database connection pool...")
-    await init_db()
-    
+    try:
+        await init_db()
+        logger.info("Database initialized successfully.")
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {e}. Check DATABASE_URL in Railway.")
+
     # Setup Telegram Bot Webhook or Polling
-    if settings.USE_WEBHOOK:
-        webhook_url = f"{settings.APP_URL}/api/v1/bot/webhook"
-        logger.info(f"Setting bot webhook to: {webhook_url}")
-        await bot.set_webhook(webhook_url, secret_token=settings.WEBHOOK_SECRET)
-    else:
-        logger.info("Starting bot in polling mode (background task)...")
-        asyncio.create_task(dp.start_polling(bot))
-        
-    await setup_bot_commands(bot)
+    try:
+        clean_token = settings.CLEAN_BOT_TOKEN
+        if not clean_token or "AAH_x92JkL0mN81qZ" in clean_token:
+            logger.warning("⚠️ BOT_TOKEN is missing or using default dummy value! Please set BOT_TOKEN in Railway Variables without quotes.")
+        else:
+            bot_me = await bot.get_me()
+            logger.info(f"🤖 Connected to Telegram as @{bot_me.username} ({bot_me.first_name})")
+            if settings.USE_WEBHOOK:
+                webhook_url = f"{settings.APP_URL.strip('"'')}/api/v1/bot/webhook"
+                logger.info(f"Setting bot webhook to: {webhook_url}")
+                await bot.set_webhook(webhook_url, secret_token=settings.WEBHOOK_SECRET)
+            else:
+                logger.info("Starting bot in long-polling mode...")
+                await bot.delete_webhook(drop_pending_updates=True)
+                asyncio.create_task(dp.start_polling(bot))
+                
+            await setup_bot_commands(bot)
+            logger.info("🚀 Telegram Bot initialized and polling started successfully.")
+    except Exception as e:
+        logger.error(f"❌ Telegram Bot startup failed: {e}. Make sure BOT_TOKEN is valid from @BotFather in Railway Variables.")
+
     yield
     
     # Shutdown
     logger.info("Shutting down application resources...")
-    if settings.USE_WEBHOOK:
-        await bot.delete_webhook()
-    await bot.session.close()
-    await close_db()
+    try:
+        if settings.USE_WEBHOOK and settings.BOT_TOKEN:
+            await bot.delete_webhook()
+        await bot.session.close()
+        await close_db()
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
 
 
 app = FastAPI(

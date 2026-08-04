@@ -13,7 +13,7 @@ from app.bot.middlewares.db import DbSessionMiddleware
 logger = logging.getLogger(__name__)
 
 bot = Bot(
-    token=settings.BOT_TOKEN,
+    token=settings.CLEAN_BOT_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 

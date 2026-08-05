@@ -27,13 +27,13 @@ class Settings(BaseSettings):
     def CLEAN_BOT_TOKEN(self) -> str:
         if not self.BOT_TOKEN:
             return ""
-        return self.BOT_TOKEN.strip(''" \t\r\n')
+        return self.BOT_TOKEN.strip().strip('"').strip("'").strip()
 
     @property
     def CLEAN_APP_URL(self) -> str:
         if not self.APP_URL:
             return ""
-        return self.APP_URL.strip(''" \t\r\n').rstrip('/')
+        return self.APP_URL.strip().strip('"').strip("'").rstrip('/')
 
     @property
     def DATABASE_URL(self) -> str:
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
                 return f"sqlite+aiosqlite:///{self.SQLITE_DB_PATH}"
             url = f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         
-        url = url.strip(''" \t\r\n')
+        url = url.strip().strip('"').strip("'").strip()
         # Railway automatically injects postgres:// or postgresql://
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql+asyncpg://", 1)

@@ -31,6 +31,13 @@ class Settings(BaseSettings):
 ')
 
     @property
+    def CLEAN_APP_URL(self) -> str:
+        if not self.APP_URL:
+            return ""
+        return self.APP_URL.strip('"' + "'" + ' 	
+').rstrip('/')
+
+    @property
     def DATABASE_URL(self) -> str:
         url = self.DB_URL
         if not url:

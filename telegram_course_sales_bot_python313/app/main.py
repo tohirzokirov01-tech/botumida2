@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
             bot_me = await bot.get_me()
             logger.info(f"🤖 Connected to Telegram as @{bot_me.username} ({bot_me.first_name})")
             if settings.USE_WEBHOOK:
-                webhook_url = f"{settings.APP_URL.strip('"'')}/api/v1/bot/webhook"
+                webhook_url = f"{settings.CLEAN_APP_URL}/api/v1/bot/webhook"
                 logger.info(f"Setting bot webhook to: {webhook_url}")
                 await bot.set_webhook(webhook_url, secret_token=settings.WEBHOOK_SECRET)
             else:

@@ -28,6 +28,14 @@ AsyncSessionLocal = async_sessionmaker(
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        try:
+            from sqlalchemy import text
+            if "sqlite" in settings.DATABASE_URL:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN language VARCHAR(16) DEFAULT 'ru';"))
+            else:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(16) DEFAULT 'ru';"))
+        except Exception:
+            pass
 
     # Seed initial categories & courses if empty
     async with AsyncSessionLocal() as session:

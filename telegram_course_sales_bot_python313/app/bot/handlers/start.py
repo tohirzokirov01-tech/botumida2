@@ -177,10 +177,10 @@ async def cmd_promocode(event: types.Message | types.CallbackQuery):
 async def cmd_support(event: types.Message | types.CallbackQuery, db: AsyncSession = None):
     msg = event.message if isinstance(event, types.CallbackQuery) else event
     txt = (
-        "💬 **Центр поддержки и FAQ:**\n\n"
+        "💬 <b>Центр поддержки и FAQ:</b>\n\n"
         "Добро пожаловать в центр помощи пользователей! Выберите нужный раздел или задайте вопрос оператору:\n\n"
-        "📞 **Оператор:** @edustore_support\n"
-        "📞 **Телефон:** +998 71 200-00-00"
+        "📞 <b>Оператор:</b> @edustore_support\n"
+        "📞 <b>Телефон:</b> +998 71 200-00-00"
     )
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="❓ Как зайти в канал после оплаты?", callback_data="faq_access")],
@@ -190,19 +190,19 @@ async def cmd_support(event: types.Message | types.CallbackQuery, db: AsyncSessi
         [types.InlineKeyboardButton(text="💬 Написать оператору (@edustore_support)", url="https://t.me/edustore_support")]
     ])
     if isinstance(event, types.CallbackQuery):
-        await msg.answer(txt, reply_markup=kb, parse_mode="Markdown")
+        await msg.answer(txt, reply_markup=kb, parse_mode="HTML")
         await event.answer()
     else:
-        await msg.answer(txt, reply_markup=kb, parse_mode="Markdown")
+        await msg.answer(txt, reply_markup=kb, parse_mode="HTML")
 
 
 @router.callback_query(F.data == "faq_access")
 async def faq_access_handler(callback: types.CallbackQuery):
     await callback.message.answer(
-        "❓ **Как зайти в закрытый Telegram-канал курса?**\n\n"
-        "Сразу после оплаты через Payme или Click бот сгенерирует персональную 1-разовую ссылку (member_limit=1). "
+        "❓ <b>Как зайти в закрытый Telegram-канал курса?</b>\n\n"
+        "Сразу после оплаты через Payme или Click бот сгенерирует персональную 1-разовую ссылку (<code>member_limit=1</code>). "
         "Ссылка придёт прямо в чат и аннулируется после первого перехода.",
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await callback.answer()
 
@@ -210,10 +210,10 @@ async def faq_access_handler(callback: types.CallbackQuery):
 @router.callback_query(F.data == "faq_pay")
 async def faq_pay_handler(callback: types.CallbackQuery):
     await callback.message.answer(
-        "💳 **Способы оплаты:**\n\n"
+        "💳 <b>Способы оплаты:</b>\n\n"
         "Мы поддерживаем официальные платежные системы Узбекистана — Payme и CLICK. "
         "Все платежи зачисляются мгновенно с автоматической выдачей доступа к курсам.",
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await callback.answer()
 
@@ -221,9 +221,9 @@ async def faq_pay_handler(callback: types.CallbackQuery):
 @router.callback_query(F.data == "faq_promo")
 async def faq_promo_handler(callback: types.CallbackQuery):
     await callback.message.answer(
-        "🎟️ **Как активировать промокод?**\n\n"
-        "Просто отправьте ваш промокод (например: **WELCOME20** или **BONUS100K**) текстовым сообщением в чат боту!",
-        parse_mode="Markdown"
+        "🎟️ <b>Как активировать промокод?</b>\n\n"
+        "Просто отправьте ваш промокод (например: <b>WELCOME20</b> или <b>BONUS100K</b>) текстовым сообщением в чат боту!",
+        parse_mode="HTML"
     )
     await callback.answer()
 
@@ -231,10 +231,10 @@ async def faq_promo_handler(callback: types.CallbackQuery):
 @router.callback_query(F.data == "faq_ref")
 async def faq_ref_handler(callback: types.CallbackQuery):
     await callback.message.answer(
-        "🎁 **Реферальная система:**\n\n"
-        "Скопируйте вашу уникальную ссылку в разделе **Профиль**. "
+        "🎁 <b>Реферальная система:</b>\n\n"
+        "Скопируйте вашу уникальную ссылку в разделе <b>Профиль</b>. "
         "За каждый купленный курс вашим рефералом вы получаете 10% от стоимости на свой баланс!",
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await callback.answer()
 

@@ -295,8 +295,7 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     # Build HTML rows
     course_rows = ""
     for c in courses:
-        desc_escaped = (c.description or "").replace('"', '&quot;').replace('
-', ' ')
+        desc_escaped = (c.description or "").replace('"', '&quot;').replace('\n', ' ')
         img_val = (c.image_url or "").replace('"', '&quot;')
         title_escaped = c.title.replace('"', '&quot;')
         author_escaped = (c.author or '').replace('"', '&quot;')

@@ -106,18 +106,11 @@ async def cmd_profile(message: types.Message, db: AsyncSession):
     
     if user_lang == "uz_latn":
         txt = (
-            f"👤 **Sizning profilingiz:**
-
-"
-            f"👤 **Ism:** {message.from_user.first_name}
-"
-            f"🆔 **Telegram ID:** `{telegram_id}`
-"
-            f"💵 **Balans:** {balance:,} so'm
-
-"
-            f"🔗 **Taklif havolangiz:**
-"
+            f"👤 **Sizning profilingiz:**\n\n"
+            f"👤 **Ism:** {message.from_user.first_name}\n"
+            f"🆔 **Telegram ID:** `{telegram_id}`\n"
+            f"💵 **Balans:** {balance:,} so'm\n\n"
+            f"🔗 **Taklif havolangiz:**\n"
             f"`https://t.me/EduStoreBot?start={ref_code}`"
         )
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -127,18 +120,11 @@ async def cmd_profile(message: types.Message, db: AsyncSession):
         ])
     elif user_lang == "uz_cyrl":
         txt = (
-            f"👤 **Сизнинг профилингиз:**
-
-"
-            f"👤 **Исм:** {message.from_user.first_name}
-"
-            f"🆔 **Telegram ID:** `{telegram_id}`
-"
-            f"💵 **Баланс:** {balance:,} сўм
-
-"
-            f"🔗 **Таклиф ҳаволангиз:**
-"
+            f"👤 **Сизнинг профилингиз:**\n\n"
+            f"👤 **Исм:** {message.from_user.first_name}\n"
+            f"🆔 **Telegram ID:** `{telegram_id}`\n"
+            f"💵 **Баланс:** {balance:,} сўм\n\n"
+            f"🔗 **Таклиф ҳаволангиз:**\n"
             f"`https://t.me/EduStoreBot?start={ref_code}`"
         )
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -148,18 +134,11 @@ async def cmd_profile(message: types.Message, db: AsyncSession):
         ])
     else:
         txt = (
-            f"👤 **Ваш личный кабинет:**
-
-"
-            f"👤 **Имя:** {message.from_user.first_name}
-"
-            f"🆔 **Telegram ID:** `{telegram_id}`
-"
-            f"💵 **Баланс:** {balance:,} сум
-
-"
-            f"🔗 **Ваша реферальная ссылка:**
-"
+            f"👤 **Ваш личный кабинет:**\n\n"
+            f"👤 **Имя:** {message.from_user.first_name}\n"
+            f"🆔 **Telegram ID:** `{telegram_id}`\n"
+            f"💵 **Баланс:** {balance:,} сум\n\n"
+            f"🔗 **Ваша реферальная ссылка:**\n"
             f"`https://t.me/EduStoreBot?start={ref_code}`"
         )
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -177,9 +156,7 @@ async def cmd_profile(message: types.Message, db: AsyncSession):
 async def cmd_promocode(event: types.Message | types.CallbackQuery):
     msg = event.message if isinstance(event, types.CallbackQuery) else event
     txt = (
-        "🎟️ **Активация промокода:**
-
-"
+        "🎟️ **Активация промокода:**\n\n"
         "Отправьте секретный промокод в чат (например: **WELCOME20** или **BONUS100K**), "
         "чтобы получить скидку на курсы или бонусы на баланс!"
     )
@@ -197,14 +174,9 @@ async def cmd_promocode(event: types.Message | types.CallbackQuery):
 async def cmd_support(event: types.Message | types.CallbackQuery):
     msg = event.message if isinstance(event, types.CallbackQuery) else event
     txt = (
-        "💬 **Служба поддержки и FAQ:**
-
-"
-        "❓ **Как зайти в закрытый Telegram-канал курса?**
-"
-        "Сразу после проведения оплаты бот генерирует индивидуальную одноразовую ссылку с лимитом на 1 человека.
-
-"
+        "💬 **Служба поддержки и FAQ:**\n\n"
+        "❓ **Как зайти в закрытый Telegram-канал курса?**\n"
+        "Сразу после проведения оплаты бот генерирует индивидуальную одноразовую ссылку с лимитом на 1 человека.\n\n"
         "📞 **Написать оператору поддержки:** @edustore_support"
     )
     kb = types.InlineKeyboardMarkup(inline_keyboard=[

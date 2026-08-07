@@ -39,21 +39,24 @@ async def show_courses_by_category(callback: CallbackQuery, db: AsyncSession):
         await callback.answer("В этой категории пока нет курсов", show_alert=True)
         return
 
+    default_cover = "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80"
+
     for c in courses:
         caption = (
-            f"🎓 *{c.title}*\n\n"
+            f"🎓 <b>{c.title}</b>\n\n"
             f"{c.description[:200]}...\n\n"
             f"👤 Автор: {c.author}\n"
-            f"💵 Цена: *{c.price_uzs:,} сум*\n"
+            f"💵 Цена: <b>{c.price_uzs:,} сум</b>\n"
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💳 Купить через Payme", callback_data=f"buy_payme_{c.id}")],
             [InlineKeyboardButton(text="🔹 Купить через Click", callback_data=f"buy_click_{c.id}")],
             [InlineKeyboardButton(text="⬅️ Назад в категории", callback_data="back_categories")]
         ])
-        if c.image_url:
-            await callback.message.answer_photo(photo=c.image_url, caption=caption, reply_markup=kb, parse_mode="Markdown")
-        else:
-            await callback.message.answer(text=caption, reply_markup=kb, parse_mode="Markdown")
+        img = c.image_url if (c.image_url and c.image_url.startswith("http")) else default_cover
+        try:
+            await callback.message.answer_photo(photo=img, caption=caption, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer_photo(photo=default_cover, caption=caption, reply_markup=kb, parse_mode="HTML")
 
     await callback.answer()

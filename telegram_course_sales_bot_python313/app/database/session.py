@@ -91,6 +91,7 @@ async def init_db():
                     description="Полный практический курс по разработке Telegram-ботов на aiogram 3, FastAPI и SQLAlchemy.",
                     price_uzs=350000,
                     author="Алексей Громов",
+                    image_url="https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=800&q=80",
                     telegram_channel_title="Закрытый канал: Python Pro 2026",
                     is_published=True
                 )
@@ -100,6 +101,7 @@ async def init_db():
                     description="Освойте профессию веб-дизайнера: проектирование интерфейсов, мобильные приложения, дизайн-системы.",
                     price_uzs=450000,
                     author="Мария Соколова",
+                    image_url="https://images.unsplash.com/photo-1581291518633-83b4ebd1d83e?auto=format&fit=crop&w=800&q=80",
                     telegram_channel_title="Закрытый клуб Figma Masters",
                     is_published=True
                 )

@@ -22,6 +22,7 @@ async def create_course_admin(
     price_uzs: int = Form(500000),
     author: str = Form("Инструктор"),
     description: str = Form(""),
+    image_url: str = Form(""),
     telegram_channel_title: str = Form(""),
     telegram_channel_id: str = Form(""),
     category_id: Optional[int] = Form(None),
@@ -46,12 +47,55 @@ async def create_course_admin(
         price_uzs=price_uzs,
         author=author,
         description=description or "Описание курса",
+        image_url=image_url or "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80",
         telegram_channel_title=telegram_channel_title or "🔒 Закрытый VIP Telegram-Канал",
         telegram_channel_id=telegram_channel_id or "-1001928374999",
         is_published=True
     )
     db.add(new_course)
     await db.commit()
+    return RedirectResponse(url="/admin/#courses", status_code=303)
+
+
+@router.post("/courses/{course_id}/edit")
+async def edit_course_admin(
+    course_id: int,
+    title: str = Form(...),
+    price_uzs: int = Form(500000),
+    author: str = Form("Инструктор"),
+    description: str = Form(""),
+    image_url: str = Form(""),
+    telegram_channel_title: str = Form(""),
+    telegram_channel_id: str = Form(""),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Course).where(Course.id == course_id)
+    res = await db.execute(stmt)
+    course = res.scalars().first()
+    if course:
+        course.title = title
+        course.price_uzs = price_uzs
+        course.author = author
+        course.description = description
+        if image_url:
+            course.image_url = image_url
+        course.telegram_channel_title = telegram_channel_title
+        course.telegram_channel_id = telegram_channel_id
+        await db.commit()
+    return RedirectResponse(url="/admin/#courses", status_code=303)
+
+
+@router.post("/courses/{course_id}/delete")
+async def delete_course_admin(
+    course_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Course).where(Course.id == course_id)
+    res = await db.execute(stmt)
+    course = res.scalars().first()
+    if course:
+        await db.delete(course)
+        await db.commit()
     return RedirectResponse(url="/admin/#courses", status_code=303)
 
 
@@ -251,18 +295,39 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     # Build HTML rows
     course_rows = ""
     for c in courses:
+        desc_escaped = (c.description or "").replace('"', '&quot;').replace('
+', ' ')
+        img_val = (c.image_url or "").replace('"', '&quot;')
+        title_escaped = c.title.replace('"', '&quot;')
+        author_escaped = (c.author or '').replace('"', '&quot;')
+        ch_title = (c.telegram_channel_title or '').replace('"', '&quot;')
+        ch_id = (c.telegram_channel_id or '').replace('"', '&quot;')
+
         course_rows += f"""
         <tr>
             <td>#{c.id}</td>
-            <td><b>{c.title}</b></td>
+            <td>
+                <div style="display:flex; align-items:center; gap:0.6rem;">
+                    <img src="{c.image_url or 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80'}" style="width:36px; height:36px; border-radius:8px; object-fit:cover; border:1px solid #334155;">
+                    <div>
+                        <b>{c.title}</b>
+                    </div>
+                </div>
+            </td>
             <td>{c.author or '—'}</td>
             <td style="color:#4ade80; font-weight:600;">{c.price_uzs:,} сум</td>
             <td><code>{c.telegram_channel_title or 'Не указан'}</code></td>
-            <td><span class="badge badge-success">Активен</span></td>
+            <td><span class="badge badge-success">{"Активен" if c.is_published else "Черновик"}</span></td>
+            <td style="text-align:right; white-space:nowrap;">
+                <button onclick="openEditCourseModal({c.id}, '{title_escaped}', {c.price_uzs}, '{author_escaped}', '{ch_title}', '{ch_id}', '{desc_escaped}', '{img_val}')" style="background:#2563eb; color:#fff; border:none; padding:0.4rem 0.75rem; border-radius:6px; font-size:0.8rem; font-weight:600; cursor:pointer; margin-right:0.3rem;">✏️ Редактировать</button>
+                <form action="/admin/courses/{c.id}/delete" method="POST" style="display:inline;" onsubmit="return confirm('Удалить курс &quot;{title_escaped}&quot;?');">
+                    <button type="submit" style="background:#ef4444; color:#fff; border:none; padding:0.4rem 0.75rem; border-radius:6px; font-size:0.8rem; font-weight:600; cursor:pointer;">🗑️ Удалить</button>
+                </form>
+            </td>
         </tr>
         """
     if not course_rows:
-        course_rows = "<tr><td colspan='6' style='text-align:center; color:#94a3b8; padding: 1.5rem;'>Курсы пока не добавлены</td></tr>"
+        course_rows = "<tr><td colspan='7' style='text-align:center; color:#94a3b8; padding: 1.5rem;'>Курсы пока не добавлены</td></tr>"
 
     user_rows = ""
     for u in users:
@@ -607,6 +672,48 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                     </form>
                 </div>
 
+                <!-- FORM / MODAL: EDIT COURSE -->
+                <div id="edit-course-modal" class="card" style="margin-bottom: 1.25rem; display:none; border: 1px solid #f59e0b; background:#0f172a;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                        <h3 style="font-size: 1.1rem; color:#f59e0b;">✏️ Редактирование курса #<span id="edit-course-id-label"></span></h3>
+                        <button type="button" onclick="document.getElementById('edit-course-modal').style.display='none'" style="background:transparent; color:#94a3b8; border:none; font-size:1.2rem; cursor:pointer;">✖</button>
+                    </div>
+                    <form id="edit-course-form" action="" method="POST" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Название курса *</label>
+                            <input type="text" id="edit-title" name="title" required style="width:100%; background:#1e293b; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Цена (UZS) *</label>
+                            <input type="number" id="edit-price" name="price_uzs" required style="width:100%; background:#1e293b; border:1px solid #334155; color:#4ade80; font-weight:bold; padding:0.55rem; border-radius:8px;">
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Автор / Преподаватель</label>
+                            <input type="text" id="edit-author" name="author" style="width:100%; background:#1e293b; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Обложка курса (URL картинки)</label>
+                            <input type="text" id="edit-image-url" name="image_url" placeholder="https://..." style="width:100%; background:#1e293b; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Название Telegram канала</label>
+                            <input type="text" id="edit-tg-title" name="telegram_channel_title" style="width:100%; background:#1e293b; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">ID Telegram Канала</label>
+                            <input type="text" id="edit-tg-id" name="telegram_channel_id" style="width:100%; background:#1e293b; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                        </div>
+                        <div style="grid-column: 1 / -1;">
+                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Описание курса</label>
+                            <textarea id="edit-description" name="description" rows="3" style="width:100%; background:#1e293b; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px; font-family:inherit;"></textarea>
+                        </div>
+                        <div style="grid-column: 1 / -1; display:flex; gap:0.5rem; justify-content:flex-end;">
+                            <button type="button" onclick="document.getElementById('edit-course-modal').style.display='none'" style="background:#334155; color:#fff; border:none; padding:0.6rem 1.2rem; border-radius:8px; font-weight:600; cursor:pointer;">Отмена</button>
+                            <button type="submit" style="background:#f59e0b; color:#000; border:none; padding:0.6rem 1.5rem; border-radius:8px; font-weight:700; cursor:pointer;">💾 Сохранить изменения</button>
+                        </div>
+                    </form>
+                </div>
+
                 <div class="card">
                     <div class="table-responsive">
                         <table>
@@ -618,6 +725,7 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                                     <th>Цена</th>
                                     <th>Канал Telegram</th>
                                     <th>Статус</th>
+                                    <th style="text-align:right;">Действия (Редактор)</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -977,6 +1085,22 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     </div>
 
     <script>
+        function openEditCourseModal(id, title, price, author, channelTitle, channelId, desc, img) {{
+            document.getElementById('edit-course-id-label').innerText = id;
+            document.getElementById('edit-course-form').action = '/admin/courses/' + id + '/edit';
+            document.getElementById('edit-title').value = title || '';
+            document.getElementById('edit-price').value = price || 500000;
+            document.getElementById('edit-author').value = author || '';
+            document.getElementById('edit-tg-title').value = channelTitle || '';
+            document.getElementById('edit-tg-id').value = channelId || '';
+            document.getElementById('edit-description').value = desc || '';
+            document.getElementById('edit-image-url').value = img || '';
+            
+            var modal = document.getElementById('edit-course-modal');
+            modal.style.display = 'block';
+            modal.scrollIntoView({{ behavior: 'smooth' }});
+        }}
+
         function toggleSidebar() {{
             document.getElementById('sidebar').classList.toggle('open');
         }}

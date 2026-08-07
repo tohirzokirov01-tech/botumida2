@@ -13,7 +13,8 @@ from app.database.models import Category, Course
 router = Router(name="catalog")
 
 
-@router.message(F.text == "📚 Каталог курсов")
+@router.message(Command("catalog"))
+@router.message(F.text.in_(["📚 Каталог курсов", "📚 Kurslar katalogi", "📚 Курслар каталоги"]))
 async def show_categories(message: types.Message, db: AsyncSession):
     stmt = select(Category)
     res = await db.execute(stmt)
@@ -22,10 +23,23 @@ async def show_categories(message: types.Message, db: AsyncSession):
     keyboard = []
     for cat in categories:
         keyboard.append([InlineKeyboardButton(text=cat.name, callback_data=f"cat_{cat.id}")])
-    keyboard.append([InlineKeyboardButton(text="🔍 Поиск курса", callback_data="search_course")])
+    keyboard.append([InlineKeyboardButton(text="🔍 Поиск курса / Kurs izlash", callback_data="search_course")])
 
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-    await message.answer("📁 **Категории онлайн-курсов:**\nВыберите интересующую тему:", reply_markup=reply_markup, parse_mode="Markdown")
+    await message.answer("📁 <b>Категории онлайн-курсов / Kurslar kategoriyalari:</b>
+Выберите интересующую тему:", reply_markup=reply_markup, parse_mode="HTML")
+
+
+@router.message(Command("mycourses"))
+@router.message(F.text.in_(["🎓 Мои курсы", "🎓 Mening kurslarim", "🎓 Менинг курсларим"]))
+async def show_my_courses(message: types.Message, db: AsyncSession):
+    await message.answer(
+        "🎓 <b>Ваши купленные курсы / Sizning kurslaringiz:</b>
+
+"
+        "Перейдите в раздел управления обучением или откройте персональные ссылки на закрытые Telegram-каналы из вашего профиля.",
+        parse_mode="HTML"
+    )
 
 
 @router.callback_query(F.data.startswith("cat_"))

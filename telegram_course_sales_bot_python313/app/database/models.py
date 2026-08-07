@@ -49,6 +49,7 @@ class User(Base):
     balance_uzs: Mapped[int] = mapped_column(BigInteger, default=0)
     referral_code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     referred_by: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    language: Mapped[str] = mapped_column(String(16), default="ru")
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

@@ -64,7 +64,10 @@ async def set_language_callback(callback: types.CallbackQuery, db: AsyncSession)
     res = await db.execute(stmt)
     user = res.scalar_one_or_none()
     if user:
-        user.language = new_lang
+        if hasattr(user, "language"):
+            user.language = new_lang
+        else:
+            setattr(user, "language", new_lang)
         await db.commit()
     
     if new_lang == "uz_latn":
@@ -102,7 +105,7 @@ async def cmd_start(message: types.Message, db: AsyncSession, command: CommandOb
         db.add(user)
         await db.commit()
 
-    user_lang = user.language if user else "ru"
+    user_lang = getattr(user, "language", "ru") if user else "ru"
     welcome_txt = (
         f"👋 **Здравствуйте, {message.from_user.first_name}!**\n\n"
         "Добро пожаловать в Академию Онлайн-Курсов.\n"

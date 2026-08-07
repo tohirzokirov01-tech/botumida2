@@ -2,14 +2,16 @@
 FastAPI Admin Panel Router & Management Dashboard
 Provides responsive web interface for managing courses, users, orders, and system settings.
 """
+from typing import Optional
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 import uuid
+import re
 
 from app.database.session import get_db
-from app.database.models import User, Course, Order, OrderStatus
+from app.database.models import User, Course, Order, OrderStatus, Category
 
 router = APIRouter()
 
@@ -22,13 +24,28 @@ async def create_course_admin(
     description: str = Form(""),
     telegram_channel_title: str = Form(""),
     telegram_channel_id: str = Form(""),
+    category_id: Optional[int] = Form(None),
     db: AsyncSession = Depends(get_db)
 ):
+    if not category_id:
+        cat_res = await db.execute(select(Category).limit(1))
+        cat = cat_res.scalars().first()
+        if not cat:
+            cat = Category(name="Курсы", slug="courses")
+            db.add(cat)
+            await db.flush()
+        category_id = cat.id
+
+    base_slug = re.sub(r'[^a-zA-Z0-9]', '-', title.lower()).strip('-') or "course"
+    slug = f"{base_slug}-{uuid.uuid4().hex[:6]}"
+
     new_course = Course(
+        category_id=category_id,
         title=title,
+        slug=slug,
         price_uzs=price_uzs,
         author=author,
-        description=description,
+        description=description or "Описание курса",
         telegram_channel_title=telegram_channel_title or "🔒 Закрытый VIP Telegram-Канал",
         telegram_channel_id=telegram_channel_id or "-1001928374999",
         is_published=True
@@ -104,6 +121,13 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
 
     orders_res = await db.execute(select(Order).order_by(Order.id.desc()).limit(20))
     orders = orders_res.scalars().all()
+
+    # Fetch categories for form
+    cats_res = await db.execute(select(Category))
+    categories = cats_res.scalars().all()
+    category_options = "".join([f'<option value="{c.id}">{c.name}</option>' for c in categories])
+    if not category_options:
+        category_options = '<option value="">Основная категория</option>'
 
     # Build Course Options for manual grant
     course_options = "".join([f'<option value="{c.id}">{c.title} ({c.price_uzs:,} сум)</option>' for c in courses])
@@ -439,6 +463,12 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                         <div>
                             <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Цена (UZS) *</label>
                             <input type="number" name="price_uzs" required value="500000" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Категория курса</label>
+                            <select name="category_id" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                                {category_options}
+                            </select>
                         </div>
                         <div>
                             <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Автор / Преподаватель</label>

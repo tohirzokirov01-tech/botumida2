@@ -71,9 +71,9 @@ class Course(Base):
     __tablename__ = "courses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), nullable=False)
+    category_id: Mapped[Optional[int]] = mapped_column(ForeignKey("categories.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(256), nullable=False)
-    slug: Mapped[str] = mapped_column(String(256), unique=True, index=True)
+    slug: Mapped[Optional[str]] = mapped_column(String(256), unique=True, index=True, nullable=True)
     description: Mapped[str] = mapped_column(Text)
     price_uzs: Mapped[int] = mapped_column(BigInteger, nullable=False)
     old_price_uzs: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)

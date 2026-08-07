@@ -32,6 +32,10 @@ async def setup_bot_commands(bot_instance: Bot):
     commands = [
         BotCommand(command="start", description="🚀 Перезапустить бота / Главное меню"),
         BotCommand(command="catalog", description="📚 Каталог онлайн-курсов"),
+        BotCommand(command="profile", description="👤 Личный кабинет и баланс"),
+        BotCommand(command="promocode", description="🎟️ Активировать промокод"),
+        BotCommand(command="support", description="💬 Служба поддержки & FAQ"),
+        BotCommand(command="language", description="🌐 Сменить язык (RU / UZ)"),
     ]
     try:
         await bot_instance.set_my_commands(commands)

@@ -11,7 +11,7 @@ import uuid
 import re
 
 from app.database.session import get_db
-from app.database.models import User, Course, Order, OrderStatus, Category
+from app.database.models import User, Course, Order, OrderStatus, Category, SystemSetting, SystemLog
 
 router = APIRouter()
 

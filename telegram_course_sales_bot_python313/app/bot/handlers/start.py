@@ -4,7 +4,7 @@ Supports referral link extraction (/start ref_123), user registration & main key
 """
 import uuid
 from aiogram import Router, F, types
-from aiogram.filters import CommandStart, CommandObject
+from aiogram.filters import CommandStart, CommandObject, Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select

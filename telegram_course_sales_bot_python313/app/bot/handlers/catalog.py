@@ -26,17 +26,14 @@ async def show_categories(message: types.Message, db: AsyncSession):
     keyboard.append([InlineKeyboardButton(text="🔍 Поиск курса / Kurs izlash", callback_data="search_course")])
 
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-    await message.answer("📁 <b>Категории онлайн-курсов / Kurslar kategoriyalari:</b>
-Выберите интересующую тему:", reply_markup=reply_markup, parse_mode="HTML")
+    await message.answer("📁 <b>Категории онлайн-курсов / Kurslar kategoriyalari:</b>\nВыберите интересующую тему:", reply_markup=reply_markup, parse_mode="HTML")
 
 
 @router.message(Command("mycourses"))
 @router.message(F.text.in_(["🎓 Мои курсы", "🎓 Mening kurslarim", "🎓 Менинг курсларим"]))
 async def show_my_courses(message: types.Message, db: AsyncSession):
     await message.answer(
-        "🎓 <b>Ваши купленные курсы / Sizning kurslaringiz:</b>
-
-"
+        "🎓 <b>Ваши купленные курсы / Sizning kurslaringiz:</b>\n\n"
         "Перейдите в раздел управления обучением или откройте персональные ссылки на закрытые Telegram-каналы из вашего профиля.",
         parse_mode="HTML"
     )

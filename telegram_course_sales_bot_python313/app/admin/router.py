@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 import uuid
 import re
+import html
 
 from app.database.session import get_db
 from app.database.models import User, Course, Order, OrderStatus, Category, SystemSetting, SystemLog
@@ -295,12 +296,13 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     # Build HTML rows
     course_rows = ""
     for c in courses:
-        desc_escaped = (c.description or "").replace('"', '&quot;').replace('\n', ' ')
-        img_val = (c.image_url or "").replace('"', '&quot;')
-        title_escaped = c.title.replace('"', '&quot;')
-        author_escaped = (c.author or '').replace('"', '&quot;')
-        ch_title = (c.telegram_channel_title or '').replace('"', '&quot;')
-        ch_id = (c.telegram_channel_id or '').replace('"', '&quot;')
+        desc_escaped = html.escape((c.description or "").replace('', '').replace('
+', ' '), quote=True)
+        img_val = html.escape(c.image_url or "", quote=True)
+        title_escaped = html.escape(c.title or "", quote=True)
+        author_escaped = html.escape(c.author or "", quote=True)
+        ch_title = html.escape(c.telegram_channel_title or "", quote=True)
+        ch_id = html.escape(c.telegram_channel_id or "", quote=True)
 
         course_rows += f"""
         <tr>
@@ -318,7 +320,17 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             <td><code>{c.telegram_channel_title or 'Не указан'}</code></td>
             <td><span class="badge badge-success">{"Активен" if c.is_published else "Черновик"}</span></td>
             <td style="text-align:right; white-space:nowrap;">
-                <button onclick="openEditCourseModal({c.id}, '{title_escaped}', {c.price_uzs}, '{author_escaped}', '{ch_title}', '{ch_id}', '{desc_escaped}', '{img_val}')" style="background:#2563eb; color:#fff; border:none; padding:0.4rem 0.75rem; border-radius:6px; font-size:0.8rem; font-weight:600; cursor:pointer; margin-right:0.3rem;">✏️ Редактировать</button>
+                <button type="button"
+                        data-id="{c.id}"
+                        data-title="{title_escaped}"
+                        data-price="{c.price_uzs}"
+                        data-author="{author_escaped}"
+                        data-ch-title="{ch_title}"
+                        data-ch-id="{ch_id}"
+                        data-desc="{desc_escaped}"
+                        data-img="{img_val}"
+                        onclick="openEditCourseModal(this)"
+                        style="background:#2563eb; color:#fff; border:none; padding:0.4rem 0.75rem; border-radius:6px; font-size:0.8rem; font-weight:600; cursor:pointer; margin-right:0.3rem;">✏️ Редактировать</button>
                 <form action="/admin/courses/{c.id}/delete" method="POST" style="display:inline;" onsubmit="return confirm('Удалить курс &quot;{title_escaped}&quot;?');">
                     <button type="submit" style="background:#ef4444; color:#fff; border:none; padding:0.4rem 0.75rem; border-radius:6px; font-size:0.8rem; font-weight:600; cursor:pointer;">🗑️ Удалить</button>
                 </form>
@@ -1084,7 +1096,16 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     </div>
 
     <script>
-        function openEditCourseModal(id, title, price, author, channelTitle, channelId, desc, img) {{
+        function openEditCourseModal(btn) {{
+            var id = btn.getAttribute('data-id');
+            var title = btn.getAttribute('data-title');
+            var price = btn.getAttribute('data-price');
+            var author = btn.getAttribute('data-author');
+            var channelTitle = btn.getAttribute('data-ch-title');
+            var channelId = btn.getAttribute('data-ch-id');
+            var desc = btn.getAttribute('data-desc');
+            var img = btn.getAttribute('data-img');
+
             document.getElementById('edit-course-id-label').innerText = id;
             document.getElementById('edit-course-form').action = '/admin/courses/' + id + '/edit';
             document.getElementById('edit-title').value = title || '';

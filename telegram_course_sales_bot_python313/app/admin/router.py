@@ -102,6 +102,52 @@ async def grant_access_admin(
     return RedirectResponse(url="/admin/#users", status_code=303)
 
 
+@router.post("/settings/update")
+async def update_settings_admin(
+    bot_name: str = Form("Курсы & Обучение Telegram Bot"),
+    support_username: str = Form("@course_support_uz"),
+    admin_group_id: str = Form("-100293847561"),
+    default_currency: str = Form("UZS (сум)"),
+    default_language: str = Form("ru"),
+    is_sandbox: str = Form("true"),
+    payme_merchant_id: str = Form("64d2910a9b3c4e5f6a7b8c9d"),
+    payme_key: str = Form("m$iL&@4!sK7#pQ9%wZ3*xY1"),
+    click_merchant_id: str = Form("184920"),
+    click_service_id: str = Form("39201"),
+    click_secret_key: str = Form("cLiCk_S3cr3t_K3y_2026"),
+    db: AsyncSession = Depends(get_db)
+):
+    settings_data = {
+        "bot_name": bot_name,
+        "support_username": support_username,
+        "admin_group_id": admin_group_id,
+        "default_currency": default_currency,
+        "default_language": default_language,
+        "is_sandbox": is_sandbox,
+        "payme_merchant_id": payme_merchant_id,
+        "payme_key": payme_key,
+        "click_merchant_id": click_merchant_id,
+        "click_service_id": click_service_id,
+        "click_secret_key": click_secret_key,
+    }
+    for k, v in settings_data.items():
+        stmt = select(SystemSetting).where(SystemSetting.key == k)
+        res = await db.execute(stmt)
+        setting = res.scalar_one_or_none()
+        if setting:
+            setting.value = v
+        else:
+            db.add(SystemSetting(key=k, value=v))
+    
+    db.add(SystemLog(
+        level="INFO",
+        source="AdminSettings",
+        message="Настройки Payme, Click, Telegram группы и Языка успешно обновлены через Панель Управления."
+    ))
+    await db.commit()
+    return RedirectResponse(url="/admin/#settings", status_code=303)
+
+
 @router.get("/", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     # Stats queries
@@ -660,32 +706,76 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
 
             <!-- TAB: SETTINGS -->
             <div id="tab-settings" class="tab-content">
-                <h2 style="margin-bottom:1rem; font-size: 1.3rem;">⚙️ Динамические Настройки Системы</h2>
+                <h2 style="margin-bottom:1rem; font-size: 1.3rem;">⚙️ Динамические Настройки Системы (Настройки Оплаты & Языка)</h2>
                 <div class="card">
-                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.25rem;">
-                        <div>
-                            <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem;">Название Бота</label>
-                            <input type="text" value="Курсы & Обучение Telegram Bot" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                    <form action="/admin/settings/update" method="POST">
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.25rem;">
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Название Бота</label>
+                                <input type="text" name="bot_name" value="Курсы & Обучение Telegram Bot" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Telegram Поддержки (@username)</label>
+                                <input type="text" name="support_username" value="@course_support_uz" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">ID Telegram Группы Уведомлений</label>
+                                <input type="text" name="admin_group_id" value="-100293847561" style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Язык бота по умолчанию</label>
+                                <select name="default_language" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px; font-weight:600;">
+                                    <option value="ru" selected>🇷🇺 Русский</option>
+                                    <option value="uz_latn">🇺🇿 O'zbekcha (Lotin)</option>
+                                    <option value="uz_cyrl">🇺🇿 Ўзбекча (Кирилл)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Валюта по умолчанию</label>
+                                <input type="text" name="default_currency" value="UZS (сум)" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Тестовый режим Payme / Click</label>
+                                <select name="is_sandbox" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                                    <option value="true" selected>Включен (Sandbox / Тестовый)</option>
+                                    <option value="false">Выключен (Production / Боевой)</option>
+                                </select>
+                            </div>
+
+                            <!-- PAYME SETTINGS -->
+                            <div style="grid-column: 1 / -1; margin-top: 0.5rem; border-t: 1px solid #334155; padding-top: 1rem;">
+                                <h3 style="color:#38bdf8; font-size:1rem; margin-bottom:0.75rem; display:flex; align-items:center; gap:0.5rem;">💳 Настройки Интеграции Payme Merchant API</h3>
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Payme Merchant ID</label>
+                                <input type="text" name="payme_merchant_id" value="64d2910a9b3c4e5f6a7b8c9d" placeholder="64d2910a9b3c4e5f..." style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Payme Secret Key (Пароль кассы / Key)</label>
+                                <input type="text" name="payme_key" value="m$iL&@4!sK7#pQ9%wZ3*xY1" placeholder="Ключ авторизации Payme Webhook" style="width:100%; background:#0f172a; border:1px solid #334155; color:#f59e0b; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                            </div>
+
+                            <!-- CLICK SETTINGS -->
+                            <div style="grid-column: 1 / -1; margin-top: 0.5rem; border-t: 1px solid #334155; padding-top: 1rem;">
+                                <h3 style="color:#60a5fa; font-size:1rem; margin-bottom:0.75rem; display:flex; align-items:center; gap:0.5rem;">🔹 Настройки Интеграции CLICK Merchant API</h3>
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Click Merchant ID</label>
+                                <input type="text" name="click_merchant_id" value="184920" placeholder="184920" style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Click Service ID</label>
+                                <input type="text" name="click_service_id" value="39201" placeholder="39201" style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                            </div>
+                            <div style="grid-column: 1 / -1;">
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Click Secret Key (Секретный ключ подписи MD5)</label>
+                                <input type="text" name="click_secret_key" value="cLiCk_S3cr3t_K3y_2026" placeholder="cLiCk_S3cr3t_K3y_..." style="width:100%; background:#0f172a; border:1px solid #334155; color:#f59e0b; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                            </div>
                         </div>
-                        <div>
-                            <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem;">Telegram Поддержки (@username)</label>
-                            <input type="text" value="@course_support_uz" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                        <div style="margin-top:1.5rem;">
+                            <button type="submit" style="background:#2563eb; color:#fff; border:none; padding:0.7rem 1.8rem; border-radius:8px; font-weight:600; cursor:pointer; font-size:0.95rem;">💾 Сохранить все настройки оплаты и языка</button>
                         </div>
-                        <div>
-                            <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem;">Валюта по умолчанию</label>
-                            <input type="text" value="UZS (сум)" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
-                        </div>
-                        <div>
-                            <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem;">Тестовый режим Payme / Click</label>
-                            <select style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
-                                <option value="true" selected>Включен (Sandbox)</option>
-                                <option value="false">Выключен (Production)</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div style="margin-top:1.25rem;">
-                        <button style="background:#2563eb; color:#fff; border:none; padding:0.6rem 1.5rem; border-radius:8px; font-weight:600; cursor:pointer;" onclick="alert('Настройки успешно сохранены!')">Сохранить изменения</button>
-                    </div>
+                    </form>
                 </div>
             </div>
 

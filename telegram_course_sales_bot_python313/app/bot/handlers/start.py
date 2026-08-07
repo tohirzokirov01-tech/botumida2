@@ -104,14 +104,9 @@ async def cmd_start(message: types.Message, db: AsyncSession, command: CommandOb
 
     user_lang = user.language if user else "ru"
     welcome_txt = (
-        f"👋 **Здравствуйте, {message.from_user.first_name}!**
-
-"
-        "Добро пожаловать в Академию Онлайн-Курсов.
-"
-        "Здесь вы можете приобрести авторские курсы с моментальным доступом к урокам.
-
-"
+        f"👋 **Здравствуйте, {message.from_user.first_name}!**\n\n"
+        "Добро пожаловать в Академию Онлайн-Курсов.\n"
+        "Здесь вы можете приобрести авторские курсы с моментальным доступом к урокам.\n\n"
         "Выберите нужное действие в меню ниже:"
     )
 

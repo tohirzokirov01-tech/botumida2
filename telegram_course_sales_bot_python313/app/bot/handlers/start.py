@@ -29,7 +29,7 @@ def get_main_keyboard(lang: str = "ru") -> ReplyKeyboardMarkup:
             keyboard=[
                 [KeyboardButton(text="📚 Курслар каталоги"), KeyboardButton(text="🎓 Менинг курсларим")],
                 [KeyboardButton(text="👤 Профиль ва баланс"), KeyboardButton(text="🎟️ Промокод")],
-                [KeyboardButton(text="🌐 Тилни ўзгартириш"), KeyboardButton(text="💬 Ғордам & FAQ")]
+                [KeyboardButton(text="🌐 Тилни ўзгартириш"), KeyboardButton(text="💬 Қўллаб-қувватлаш & FAQ")]
             ],
             resize_keyboard=True
         )
@@ -169,24 +169,74 @@ async def cmd_promocode(event: types.Message | types.CallbackQuery):
 
 @router.message(Command("support"))
 @router.message(Command("faq"))
-@router.message(F.text.in_(["💬 Поддержка & FAQ", "💬 Поддержка", "💬 Yordam & FAQ", "💬 Qo'llab-quvvatlash", "💬 Ғордам & FAQ"]))
+@router.message(F.text.in_([
+    "💬 Поддержка & FAQ", "💬 Поддержка", "💬 Yordam & FAQ", "💬 Qo'llab-quvvatlash", 
+    "💬 Qo'llab-quvvatlash & FAQ", "💬 Қўллаб-қувватлаш & FAQ", "💬 Қўллаб-қувватлаш", "💬 Ғордам & FAQ", "💬 Ёрдам & FAQ"
+]))
 @router.callback_query(F.data == "act_support")
-async def cmd_support(event: types.Message | types.CallbackQuery):
+async def cmd_support(event: types.Message | types.CallbackQuery, db: AsyncSession = None):
     msg = event.message if isinstance(event, types.CallbackQuery) else event
     txt = (
-        "💬 **Служба поддержки и FAQ:**\n\n"
-        "❓ **Как зайти в закрытый Telegram-канал курса?**\n"
-        "Сразу после проведения оплаты бот генерирует индивидуальную одноразовую ссылку с лимитом на 1 человека.\n\n"
-        "📞 **Написать оператору поддержки:** @edustore_support"
+        "💬 **Центр поддержки и FAQ:**\n\n"
+        "Добро пожаловать в центр помощи пользователей! Выберите нужный раздел или задайте вопрос оператору:\n\n"
+        "📞 **Оператор:** @edustore_support\n"
+        "📞 **Телефон:** +998 71 200-00-00"
     )
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="💬 Написать в поддержку (@edustore_support)", url="https://t.me/edustore_support")]
+        [types.InlineKeyboardButton(text="❓ Как зайти в канал после оплаты?", callback_data="faq_access")],
+        [types.InlineKeyboardButton(text="💳 Способы оплаты (Payme / Click)", callback_data="faq_pay")],
+        [types.InlineKeyboardButton(text="🎟️ Как применить промокод?", callback_data="faq_promo")],
+        [types.InlineKeyboardButton(text="🎁 Реферальная программа", callback_data="faq_ref")],
+        [types.InlineKeyboardButton(text="💬 Написать оператору (@edustore_support)", url="https://t.me/edustore_support")]
     ])
     if isinstance(event, types.CallbackQuery):
         await msg.answer(txt, reply_markup=kb, parse_mode="Markdown")
         await event.answer()
     else:
         await msg.answer(txt, reply_markup=kb, parse_mode="Markdown")
+
+
+@router.callback_query(F.data == "faq_access")
+async def faq_access_handler(callback: types.CallbackQuery):
+    await callback.message.answer(
+        "❓ **Как зайти в закрытый Telegram-канал курса?**\n\n"
+        "Сразу после оплаты через Payme или Click бот сгенерирует персональную 1-разовую ссылку (member_limit=1). "
+        "Ссылка придёт прямо в чат и аннулируется после первого перехода.",
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "faq_pay")
+async def faq_pay_handler(callback: types.CallbackQuery):
+    await callback.message.answer(
+        "💳 **Способы оплаты:**\n\n"
+        "Мы поддерживаем официальные платежные системы Узбекистана — Payme и CLICK. "
+        "Все платежи зачисляются мгновенно с автоматической выдачей доступа к курсам.",
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "faq_promo")
+async def faq_promo_handler(callback: types.CallbackQuery):
+    await callback.message.answer(
+        "🎟️ **Как активировать промокод?**\n\n"
+        "Просто отправьте ваш промокод (например: **WELCOME20** или **BONUS100K**) текстовым сообщением в чат боту!",
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "faq_ref")
+async def faq_ref_handler(callback: types.CallbackQuery):
+    await callback.message.answer(
+        "🎁 **Реферальная система:**\n\n"
+        "Скопируйте вашу уникальную ссылку в разделе **Профиль**. "
+        "За каждый купленный курс вашим рефералом вы получаете 10% от стоимости на свой баланс!",
+        parse_mode="Markdown"
+    )
+    await callback.answer()
 
 
 @router.message(F.text.startswith("WELCOME") | F.text.startswith("BONUS") | F.text.startswith("PROMO") | F.text.startswith("SKIDKA"))

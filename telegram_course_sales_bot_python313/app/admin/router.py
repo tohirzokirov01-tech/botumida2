@@ -148,6 +148,48 @@ async def update_settings_admin(
     return RedirectResponse(url="/admin/#settings", status_code=303)
 
 
+@router.post("/dictionary/update")
+async def update_dictionary_admin(
+    dict_welcome_ru: str = Form(...),
+    dict_welcome_uz_latn: str = Form(...),
+    dict_welcome_uz_cyrl: str = Form(...),
+    dict_catalog_btn_ru: str = Form(...),
+    dict_catalog_btn_uz_latn: str = Form(...),
+    dict_catalog_btn_uz_cyrl: str = Form(...),
+    dict_profile_btn_ru: str = Form(...),
+    dict_profile_btn_uz_latn: str = Form(...),
+    dict_profile_btn_uz_cyrl: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    dict_data = {
+        "dict_welcome_ru": dict_welcome_ru,
+        "dict_welcome_uz_latn": dict_welcome_uz_latn,
+        "dict_welcome_uz_cyrl": dict_welcome_uz_cyrl,
+        "dict_catalog_btn_ru": dict_catalog_btn_ru,
+        "dict_catalog_btn_uz_latn": dict_catalog_btn_uz_latn,
+        "dict_catalog_btn_uz_cyrl": dict_catalog_btn_uz_cyrl,
+        "dict_profile_btn_ru": dict_profile_btn_ru,
+        "dict_profile_btn_uz_latn": dict_profile_btn_uz_latn,
+        "dict_profile_btn_uz_cyrl": dict_profile_btn_uz_cyrl,
+    }
+    for k, v in dict_data.items():
+        stmt = select(SystemSetting).where(SystemSetting.key == k)
+        res = await db.execute(stmt)
+        setting = res.scalar_one_or_none()
+        if setting:
+            setting.value = v
+        else:
+            db.add(SystemSetting(key=k, value=v))
+    
+    db.add(SystemLog(
+        level="INFO",
+        source="DictionaryEditor",
+        message="Словарь фраз бота (RU, UZ Lotin, UZ Cyrl) успешно обновлен в базе данных."
+    ))
+    await db.commit()
+    return RedirectResponse(url="/admin/#dictionary", status_code=303)
+
+
 @router.get("/", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     # Stats queries
@@ -157,6 +199,32 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     
     paid_orders_stmt = select(func.sum(Order.amount_uzs)).where(Order.status == OrderStatus.PAID)
     total_revenue = (await db.execute(paid_orders_stmt)).scalar() or 0
+
+    # Fetch settings from DB dynamically
+    settings_res = await db.execute(select(SystemSetting))
+    sys_settings = {s.key: s.value for s in settings_res.scalars().all()}
+
+    bot_name_val = sys_settings.get("bot_name", "Курсы & Обучение Telegram Bot")
+    support_username_val = sys_settings.get("support_username", "@course_support_uz")
+    admin_group_id_val = sys_settings.get("admin_group_id", "-100293847561")
+    default_currency_val = sys_settings.get("default_currency", "UZS (сум)")
+    default_language_val = sys_settings.get("default_language", "ru")
+    is_sandbox_val = sys_settings.get("is_sandbox", "true")
+    payme_merchant_id_val = sys_settings.get("payme_merchant_id", "64d2910a9b3c4e5f6a7b8c9d")
+    payme_key_val = sys_settings.get("payme_key", "m$iL&@4!sK7#pQ9%wZ3*xY1")
+    click_merchant_id_val = sys_settings.get("click_merchant_id", "184920")
+    click_service_id_val = sys_settings.get("click_service_id", "39201")
+    click_secret_key_val = sys_settings.get("click_secret_key", "cLiCk_S3cr3t_K3y_2026")
+
+    dict_welcome_ru_val = sys_settings.get("dict_welcome_ru", "👋 Здравствуйте! Добро пожаловать в Академию Курсов.")
+    dict_welcome_uz_latn_val = sys_settings.get("dict_welcome_uz_latn", "👋 Assalomu alaykum! Kurslar Akademiyasiga xush kelibsiz.")
+    dict_welcome_uz_cyrl_val = sys_settings.get("dict_welcome_uz_cyrl", "👋 Ассалому алайкум! Курслар Академиясига хуш келибсиз.")
+    dict_catalog_btn_ru_val = sys_settings.get("dict_catalog_btn_ru", "📚 Каталог курсов")
+    dict_catalog_btn_uz_latn_val = sys_settings.get("dict_catalog_btn_uz_latn", "📚 Kurslar katalogi")
+    dict_catalog_btn_uz_cyrl_val = sys_settings.get("dict_catalog_btn_uz_cyrl", "📚 Курслар каталоги")
+    dict_profile_btn_ru_val = sys_settings.get("dict_profile_btn_ru", "👤 Личный кабинет")
+    dict_profile_btn_uz_latn_val = sys_settings.get("dict_profile_btn_uz_latn", "👤 Shaxsiy kabinet")
+    dict_profile_btn_uz_cyrl_val = sys_settings.get("dict_profile_btn_uz_cyrl", "👤 Шахсий кабинет")
 
     # Fetch records for tables
     courses_res = await db.execute(select(Course).order_by(Course.id.desc()))
@@ -434,15 +502,16 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
 
     <div class="app-container">
         <aside id="sidebar">
-            <div class="nav-item active" onclick="switchTab('dashboard', this)">📊 Аналитика & Продажи</div>
-            <div class="nav-item" onclick="switchTab('courses', this)">📚 Курсы & Уроки ({courses_count})</div>
-            <div class="nav-item" onclick="switchTab('orders', this)">🛒 Заказы & Транзакции ({orders_count})</div>
-            <div class="nav-item" onclick="switchTab('users', this)">👥 Пользователи & Доступ ({users_count})</div>
-            <div class="nav-item" onclick="switchTab('promocodes', this)">🎟️ Промокоды</div>
-            <div class="nav-item" onclick="switchTab('broadcasts', this)">📢 Рассылка сообщений</div>
-            <div class="nav-item" onclick="switchTab('settings', this)">⚙️ Динамич. Настройки</div>
-            <div class="nav-item" onclick="switchTab('logs', this)">📋 Логи & Безопасность</div>
-            <div class="nav-item" onclick="switchTab('api', this)">🔌 API & Вебхуки</div>
+            <div class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard', this)">📊 Аналитика & Продажи</div>
+            <div class="nav-item" data-tab="courses" onclick="switchTab('courses', this)">📚 Курсы & Уроки ({courses_count})</div>
+            <div class="nav-item" data-tab="orders" onclick="switchTab('orders', this)">🛒 Заказы & Транзакции ({orders_count})</div>
+            <div class="nav-item" data-tab="users" onclick="switchTab('users', this)">👥 Пользователи & Доступ ({users_count})</div>
+            <div class="nav-item" data-tab="promocodes" onclick="switchTab('promocodes', this)">🎟️ Промокоды</div>
+            <div class="nav-item" data-tab="broadcasts" onclick="switchTab('broadcasts', this)">📢 Рассылка сообщений</div>
+            <div class="nav-item" data-tab="dictionary" onclick="switchTab('dictionary', this)" style="color:#fbbf24; font-weight:600;">📖 Редактор Словаря & Фраз</div>
+            <div class="nav-item" data-tab="settings" onclick="switchTab('settings', this)">⚙️ Динамич. Настройки</div>
+            <div class="nav-item" data-tab="logs" onclick="switchTab('logs', this)">📋 Логи & Безопасность</div>
+            <div class="nav-item" data-tab="api" onclick="switchTab('api', this)">🔌 API & Вебхуки</div>
         </aside>
 
         <main>
@@ -704,6 +773,79 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                 </div>
             </div>
 
+            <!-- TAB: DICTIONARY EDITOR -->
+            <div id="tab-dictionary" class="tab-content">
+                <h2 style="margin-bottom:1rem; font-size: 1.3rem; color:#fbbf24;">📖 Редактор Словаря & Переводов Фраз Бота</h2>
+                <p style="color:#94a3b8; font-size:0.875rem; margin-bottom:1.25rem;">Настраивайте текстовые фразы и сообщения Telegram бота для всех трех поддерживаемых языков (RU, UZ Lotin, UZ Cyrl).</p>
+                
+                <div class="card">
+                    <form action="/admin/dictionary/update" method="POST">
+                        <div style="display:flex; flex-direction:column; gap:1.5rem;">
+                            <!-- Welcome phrase -->
+                            <div style="border-bottom:1px solid #334155; padding-bottom:1rem;">
+                                <h3 style="font-size:1rem; color:#38bdf8; margin-bottom:0.75rem;">👋 Приветственное сообщение (/start)</h3>
+                                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem;">
+                                    <div>
+                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇷🇺 Русский язык</label>
+                                        <textarea name="dict_welcome_ru" rows="2" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px; font-family:inherit;">{dict_welcome_ru_val}</textarea>
+                                    </div>
+                                    <div>
+                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇺🇿 O'zbekcha (Lotin)</label>
+                                        <textarea name="dict_welcome_uz_latn" rows="2" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px; font-family:inherit;">{dict_welcome_uz_latn_val}</textarea>
+                                    </div>
+                                    <div>
+                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇺🇿 Ўзбекча (Кирилл)</label>
+                                        <textarea name="dict_welcome_uz_cyrl" rows="2" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px; font-family:inherit;">{dict_welcome_uz_cyrl_val}</textarea>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Catalog button phrase -->
+                            <div style="border-bottom:1px solid #334155; padding-bottom:1rem;">
+                                <h3 style="font-size:1rem; color:#38bdf8; margin-bottom:0.75rem;">📚 Кнопка "Каталог курсов"</h3>
+                                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem;">
+                                    <div>
+                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇷🇺 Русский язык</label>
+                                        <input type="text" name="dict_catalog_btn_ru" value="{dict_catalog_btn_ru_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                                    </div>
+                                    <div>
+                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇺🇿 O'zbekcha (Lotin)</label>
+                                        <input type="text" name="dict_catalog_btn_uz_latn" value="{dict_catalog_btn_uz_latn_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                                    </div>
+                                    <div>
+                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇺🇿 Ўзбекча (Кирилл)</label>
+                                        <input type="text" name="dict_catalog_btn_uz_cyrl" value="{dict_catalog_btn_uz_cyrl_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Profile button phrase -->
+                            <div style="border-bottom:1px solid #334155; padding-bottom:1rem;">
+                                <h3 style="font-size:1rem; color:#38bdf8; margin-bottom:0.75rem;">👤 Кнопка "Личный кабинет"</h3>
+                                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem;">
+                                    <div>
+                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇷🇺 Русский язык</label>
+                                        <input type="text" name="dict_profile_btn_ru" value="{dict_profile_btn_ru_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                                    </div>
+                                    <div>
+                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇺🇿 O'zbekcha (Lotin)</label>
+                                        <input type="text" name="dict_profile_btn_uz_latn" value="{dict_profile_btn_uz_latn_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                                    </div>
+                                    <div>
+                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇺🇿 Ўзбекча (Кирилл)</label>
+                                        <input type="text" name="dict_profile_btn_uz_cyrl" value="{dict_profile_btn_uz_cyrl_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <button type="submit" style="background:#f59e0b; color:#000; border:none; padding:0.75rem 2rem; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.95rem;">💾 Сохранить фразы и словарь</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
             <!-- TAB: SETTINGS -->
             <div id="tab-settings" class="tab-content">
                 <h2 style="margin-bottom:1rem; font-size: 1.3rem;">⚙️ Динамические Настройки Системы (Настройки Оплаты & Языка)</h2>
@@ -712,33 +854,33 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.25rem;">
                             <div>
                                 <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Название Бота</label>
-                                <input type="text" name="bot_name" value="Курсы & Обучение Telegram Bot" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                                <input type="text" name="bot_name" value="{bot_name_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
                             </div>
                             <div>
                                 <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Telegram Поддержки (@username)</label>
-                                <input type="text" name="support_username" value="@course_support_uz" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                                <input type="text" name="support_username" value="{support_username_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
                             </div>
                             <div>
                                 <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">ID Telegram Группы Уведомлений</label>
-                                <input type="text" name="admin_group_id" value="-100293847561" style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                                <input type="text" name="admin_group_id" value="{admin_group_id_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
                             </div>
                             <div>
                                 <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Язык бота по умолчанию</label>
                                 <select name="default_language" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px; font-weight:600;">
-                                    <option value="ru" selected>🇷🇺 Русский</option>
-                                    <option value="uz_latn">🇺🇿 O'zbekcha (Lotin)</option>
-                                    <option value="uz_cyrl">🇺🇿 Ўзбекча (Кирилл)</option>
+                                    <option value="ru" {"selected" if default_language_val == "ru" else ""}>🇷🇺 Русский</option>
+                                    <option value="uz_latn" {"selected" if default_language_val == "uz_latn" else ""}>🇺🇿 O'zbekcha (Lotin)</option>
+                                    <option value="uz_cyrl" {"selected" if default_language_val == "uz_cyrl" else ""}>🇺🇿 Ўзбекча (Кирилл)</option>
                                 </select>
                             </div>
                             <div>
                                 <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Валюта по умолчанию</label>
-                                <input type="text" name="default_currency" value="UZS (сум)" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                                <input type="text" name="default_currency" value="{default_currency_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
                             </div>
                             <div>
                                 <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Тестовый режим Payme / Click</label>
                                 <select name="is_sandbox" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
-                                    <option value="true" selected>Включен (Sandbox / Тестовый)</option>
-                                    <option value="false">Выключен (Production / Боевой)</option>
+                                    <option value="true" {"selected" if is_sandbox_val.lower() == "true" else ""}>Включен (Sandbox / Тестовый)</option>
+                                    <option value="false" {"selected" if is_sandbox_val.lower() == "false" else ""}>Выключен (Production / Боевой)</option>
                                 </select>
                             </div>
 
@@ -748,11 +890,11 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                             </div>
                             <div>
                                 <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Payme Merchant ID</label>
-                                <input type="text" name="payme_merchant_id" value="64d2910a9b3c4e5f6a7b8c9d" placeholder="64d2910a9b3c4e5f..." style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                                <input type="text" name="payme_merchant_id" value="{payme_merchant_id_val}" placeholder="64d2910a9b3c4e5f..." style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
                             </div>
                             <div>
                                 <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Payme Secret Key (Пароль кассы / Key)</label>
-                                <input type="text" name="payme_key" value="m$iL&@4!sK7#pQ9%wZ3*xY1" placeholder="Ключ авторизации Payme Webhook" style="width:100%; background:#0f172a; border:1px solid #334155; color:#f59e0b; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                                <input type="text" name="payme_key" value="{payme_key_val}" placeholder="Ключ авторизации Payme Webhook" style="width:100%; background:#0f172a; border:1px solid #334155; color:#f59e0b; padding:0.6rem; border-radius:8px; font-family:monospace;">
                             </div>
 
                             <!-- CLICK SETTINGS -->
@@ -761,15 +903,15 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                             </div>
                             <div>
                                 <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Click Merchant ID</label>
-                                <input type="text" name="click_merchant_id" value="184920" placeholder="184920" style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                                <input type="text" name="click_merchant_id" value="{click_merchant_id_val}" placeholder="184920" style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
                             </div>
                             <div>
                                 <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Click Service ID</label>
-                                <input type="text" name="click_service_id" value="39201" placeholder="39201" style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                                <input type="text" name="click_service_id" value="{click_service_id_val}" placeholder="39201" style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
                             </div>
                             <div style="grid-column: 1 / -1;">
                                 <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Click Secret Key (Секретный ключ подписи MD5)</label>
-                                <input type="text" name="click_secret_key" value="cLiCk_S3cr3t_K3y_2026" placeholder="cLiCk_S3cr3t_K3y_..." style="width:100%; background:#0f172a; border:1px solid #334155; color:#f59e0b; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                                <input type="text" name="click_secret_key" value="{click_secret_key_val}" placeholder="cLiCk_S3cr3t_K3y_..." style="width:100%; background:#0f172a; border:1px solid #334155; color:#f59e0b; padding:0.6rem; border-radius:8px; font-family:monospace;">
                             </div>
                         </div>
                         <div style="margin-top:1.5rem;">
@@ -843,13 +985,28 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
             document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
             
-            document.getElementById('tab-' + tabId).classList.add('active');
-            el.classList.add('active');
+            var target = document.getElementById('tab-' + tabId);
+            if (target) {{
+                target.classList.add('active');
+            }}
+            if (el) {{
+                el.classList.add('active');
+            }} else {{
+                var navEl = document.querySelector('.nav-item[data-tab="' + tabId + '"]');
+                if (navEl) navEl.classList.add('active');
+            }}
 
             if (window.innerWidth <= 768) {{
                 document.getElementById('sidebar').classList.remove('open');
             }}
         }}
+
+        window.addEventListener('DOMContentLoaded', function() {{
+            var hash = window.location.hash.replace('#', '');
+            if (hash) {{
+                switchTab(hash);
+            }}
+        }});
     </script>
 </body>
 </html>"""

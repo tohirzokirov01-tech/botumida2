@@ -44,11 +44,16 @@ class Settings(BaseSettings):
             url = f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         
         url = url.strip().strip('"').strip("'").strip()
-        # Railway automatically injects postgres:// or postgresql://
+        # Railway & Cloud SQL automatically inject postgres:// or postgresql://
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql+asyncpg://", 1)
         elif url.startswith("postgresql://") and not url.startswith("postgresql+asyncpg://"):
             url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        
+        # Clean sslmode query parameters if needed for asyncpg driver
+        if "?sslmode=" in url or "&sslmode=" in url:
+            import re
+            url = re.sub(r'[?&]sslmode=[^&]+', '', url)
         return url
 
     # Redis Config

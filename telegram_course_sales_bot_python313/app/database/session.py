@@ -9,7 +9,12 @@ from app.database.models import Base
 is_sqlite = "sqlite" in settings.DATABASE_URL
 engine_kwargs = {"echo": False, "future": True}
 if not is_sqlite:
-    engine_kwargs.update({"pool_size": 20, "max_overflow": 10})
+    engine_kwargs.update({
+        "pool_size": 20,
+        "max_overflow": 10,
+        "pool_pre_ping": True,
+        "pool_recycle": 1800
+    })
 
 engine = create_async_engine(
     settings.DATABASE_URL,
@@ -37,11 +42,41 @@ async def init_db():
         except Exception:
             pass
 
-    # Seed initial categories & courses if empty
+    # Seed initial categories, courses & system settings if empty
     async with AsyncSessionLocal() as session:
         try:
-            from app.database.models import Category, Course
+            from app.database.models import Category, Course, SystemSetting
             from sqlalchemy import select
+
+            # Seed system settings if empty
+            settings_check = await session.execute(select(SystemSetting).limit(1))
+            if not settings_check.scalars().first():
+                default_settings = [
+                    SystemSetting(key="bot_name", value="Курсы & Обучение Telegram Bot"),
+                    SystemSetting(key="support_username", value="@course_support_uz"),
+                    SystemSetting(key="admin_group_id", value="-100293847561"),
+                    SystemSetting(key="default_currency", value="UZS (сум)"),
+                    SystemSetting(key="default_language", value="ru"),
+                    SystemSetting(key="is_sandbox", value="true"),
+                    SystemSetting(key="payme_merchant_id", value="64d2910a9b3c4e5f6a7b8c9d"),
+                    SystemSetting(key="payme_key", value="m$iL&@4!sK7#pQ9%wZ3*xY1"),
+                    SystemSetting(key="click_merchant_id", value="184920"),
+                    SystemSetting(key="click_service_id", value="39201"),
+                    SystemSetting(key="click_secret_key", value="cLiCk_S3cr3t_K3y_2026"),
+                    # Dictionary keys defaults
+                    SystemSetting(key="dict_welcome_ru", value="👋 Здравствуйте! Добро пожаловать в Академию Курсов."),
+                    SystemSetting(key="dict_welcome_uz_latn", value="👋 Assalomu alaykum! Kurslar Akademiyasiga xush kelibsiz."),
+                    SystemSetting(key="dict_welcome_uz_cyrl", value="👋 Ассалому алайкум! Курслар Академиясига хуш келибсиз."),
+                    SystemSetting(key="dict_catalog_btn_ru", value="📚 Каталог курсов"),
+                    SystemSetting(key="dict_catalog_btn_uz_latn", value="📚 Kurslar katalogi"),
+                    SystemSetting(key="dict_catalog_btn_uz_cyrl", value="📚 Курслар каталоги"),
+                    SystemSetting(key="dict_profile_btn_ru", value="👤 Личный кабинет"),
+                    SystemSetting(key="dict_profile_btn_uz_latn", value="👤 Shaxsiy kabinet"),
+                    SystemSetting(key="dict_profile_btn_uz_cyrl", value="👤 Шахсий кабинет"),
+                ]
+                session.add_all(default_settings)
+                await session.flush()
+
             res = await session.execute(select(Category))
             if not res.scalars().first():
                 cat1 = Category(name="💻 Программирование & IT", slug="it")
@@ -70,7 +105,7 @@ async def init_db():
                 )
                 session.add_all([c1, c2])
                 await session.commit()
-        except Exception:
+        except Exception as e:
             await session.rollback()
 
 

@@ -200,14 +200,10 @@ async def process_promocode(message: types.Message, db: AsyncSession):
         if user:
             user.balance_uzs = getattr(user, "balance_uzs", 0) + 100000
             await db.commit()
-            await message.answer(f"🎉 **Промокод '{code}' успешно применен!**
-
-💰 На ваш баланс начислено **100 000 сум**!", parse_mode="Markdown")
+            await message.answer(f"🎉 **Промокод '{code}' успешно применен!**\n\n💰 На ваш баланс начислено **100 000 сум**!", parse_mode="Markdown")
             return
     elif "WELCOME" in code or "PROMO" in code or "SKIDKA" in code:
-        await message.answer(f"🎉 **Промокод '{code}' успешно применен!**
-
-Скидка **20%** применится автоматически при следующей покупке курса из каталога!", parse_mode="Markdown")
+        await message.answer(f"🎉 **Промокод '{code}' успешно применен!**\n\nСкидка **20%** применится автоматически при следующей покупке курса из каталога!", parse_mode="Markdown")
         return
 
 

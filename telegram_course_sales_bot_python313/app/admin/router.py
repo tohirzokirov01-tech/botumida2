@@ -2,6 +2,7 @@
 FastAPI Admin Panel Router & Management Dashboard
 Provides responsive web interface for managing courses, users, orders, and system settings.
 """
+import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -15,6 +16,9 @@ from datetime import datetime
 from app.database.session import get_db
 from app.database.models import User, Course, Order, OrderStatus, PaymentMethod, UserCourseAccess, Category, SystemSetting, SystemLog
 from app.services.notification_service import send_sale_notification_to_group
+from app.config.settings import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -246,49 +250,57 @@ async def revoke_access_admin(
     """
     Revoke course access from user (delete UserCourseAccess record, log event, and notify user)
     """
-    stmt = select(UserCourseAccess).where(
-        UserCourseAccess.user_id == user_id,
-        UserCourseAccess.course_id == course_id
-    )
-    res = await db.execute(stmt)
-    access_record = res.scalar_one_or_none()
-    if access_record:
-        await db.delete(access_record)
+    try:
+        stmt = select(UserCourseAccess).where(
+            UserCourseAccess.user_id == user_id,
+            UserCourseAccess.course_id == course_id
+        )
+        res = await db.execute(stmt)
+        access_record = res.scalar_one_or_none()
+        if access_record:
+            await db.delete(access_record)
 
-    user_res = await db.execute(select(User).where(User.id == user_id))
-    user = user_res.scalar_one_or_none()
+        user_res = await db.execute(select(User).where(User.id == user_id))
+        user = user_res.scalar_one_or_none()
 
-    course_res = await db.execute(select(Course).where(Course.id == course_id))
-    course = course_res.scalar_one_or_none()
+        course_res = await db.execute(select(Course).where(Course.id == course_id))
+        course = course_res.scalar_one_or_none()
 
-    course_title = course.title if course else f"Курс #{course_id}"
-    user_tg = user.telegram_id if user else user_id
+        course_title = course.title if course else f"Курс #{course_id}"
+        user_tg = user.telegram_id if user else user_id
 
-    db.add(SystemLog(
-        level="WARNING",
-        source="AdminRevoke",
-        message=f"Отозван доступ к курсу «{course_title}» у пользователя ID={user_tg}"
-    ))
+        db.add(SystemLog(
+            level="WARNING",
+            source="AdminRevoke",
+            message=f"Отозван доступ к курсу «{course_title}» у пользователя ID={user_tg}"
+        ))
 
-    await db.commit()
+        await db.commit()
 
-    # Direct message to user about revoked access
-    if user and user.telegram_id and course:
-        try:
-            from app.bot.main import bot
-            from app.config.settings import settings
-            revoke_msg = (
-                f"ℹ️ <b>Уведомление об изменении доступа</b>\n\n"
-                f"Ваш доступ к курсу «{course.title}» был закрыт администратором.\n\n"
-                f"По всем вопросам обращайтесь в поддержку: {settings.SUPPORT_USERNAME}"
-            )
-            await bot.send_message(
-                chat_id=user.telegram_id,
-                text=revoke_msg,
-                parse_mode="HTML"
-            )
-        except Exception as e:
-            logger.error(f"Failed to send revoke notification to user {user.telegram_id}: {e}")
+        # Direct message to user about revoked access
+        if user and user.telegram_id and course:
+            try:
+                from app.bot.main import bot
+                sup_stmt = select(SystemSetting).where(SystemSetting.key == "support_username")
+                sup_res = await db.execute(sup_stmt)
+                sup_row = sup_res.scalar_one_or_none()
+                support_contact = sup_row.value if (sup_row and sup_row.value) else getattr(settings, "SUPPORT_USERNAME", "@course_support_uz")
+
+                revoke_msg = (
+                    f"ℹ️ <b>Уведомление об изменении доступа</b>\n\n"
+                    f"Ваш доступ к курсу «{course.title}» был закрыт администратором.\n\n"
+                    f"По всем вопросам обращайтесь в поддержку: {support_contact}"
+                )
+                await bot.send_message(
+                    chat_id=user.telegram_id,
+                    text=revoke_msg,
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.warning(f"Could not send revoke telegram notification to user {user.telegram_id}: {e}")
+
+    except Exception as general_err:
+        logger.error(f"Error during revoke_access_admin: {general_err}")
 
     return RedirectResponse(url="/admin/#users", status_code=303)
 

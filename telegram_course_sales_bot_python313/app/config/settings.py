@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     
     # Default Admin Group ID for Sales Alerts
     DEFAULT_ADMIN_GROUP_ID: str = "-100293847561"
+    SUPPORT_USERNAME: str = "@course_support_uz"
     
     # Payme Credentials
     PAYME_MERCHANT_ID: str = "64d2910a9b3c4e5f6a7b8c9d"

@@ -503,12 +503,39 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     dict_profile_btn_uz_latn_val = sys_settings.get("dict_profile_btn_uz_latn", "👤 Shaxsiy kabinet")
     dict_profile_btn_uz_cyrl_val = sys_settings.get("dict_profile_btn_uz_cyrl", "👤 Шахсий кабинет")
 
-    # Fetch records for tables
-    courses_res = await db.execute(select(Course).order_by(Course.id.desc()))
-    courses = courses_res.scalars().all()
+    # Fetch records for tables with automatic schema healing
+    try:
+        courses_res = await db.execute(select(Course).order_by(Course.id.desc()))
+        courses = courses_res.scalars().all()
+    except Exception:
+        await db.rollback()
+        from sqlalchemy import text
+        from app.database.models import Base
+        try:
+            from app.database.session import engine
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+                for col_sql in [
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(16) DEFAULT 'ru';",
+                    "ALTER TABLE courses ADD COLUMN IF NOT EXISTS has_tiers BOOLEAN DEFAULT FALSE;",
+                    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tier_id INTEGER;",
+                    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tier_title VARCHAR(128);",
+                    "ALTER TABLE user_course_access ADD COLUMN IF NOT EXISTS tier_title VARCHAR(128);",
+                ]:
+                    try:
+                        await conn.execute(text(col_sql))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        courses_res = await db.execute(select(Course).order_by(Course.id.desc()))
+        courses = courses_res.scalars().all()
 
-    tiers_res = await db.execute(select(CourseTier))
-    all_tiers = tiers_res.scalars().all()
+    try:
+        tiers_res = await db.execute(select(CourseTier))
+        all_tiers = tiers_res.scalars().all()
+    except Exception:
+        all_tiers = []
     course_tiers_map = {}
     for t in all_tiers:
         course_tiers_map.setdefault(t.course_id, []).append(t)

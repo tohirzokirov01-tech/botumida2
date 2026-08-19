@@ -33,14 +33,33 @@ AsyncSessionLocal = async_sessionmaker(
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        try:
-            from sqlalchemy import text
-            if "sqlite" in settings.DATABASE_URL:
-                await conn.execute(text("ALTER TABLE users ADD COLUMN language VARCHAR(16) DEFAULT 'ru';"))
-            else:
-                await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(16) DEFAULT 'ru';"))
-        except Exception:
-            pass
+        from sqlalchemy import text
+        if "sqlite" in settings.DATABASE_URL:
+            sqlite_migrations = [
+                "ALTER TABLE users ADD COLUMN language VARCHAR(16) DEFAULT 'ru';",
+                "ALTER TABLE courses ADD COLUMN has_tiers BOOLEAN DEFAULT 0;",
+                "ALTER TABLE orders ADD COLUMN tier_id INTEGER;",
+                "ALTER TABLE orders ADD COLUMN tier_title VARCHAR(128);",
+                "ALTER TABLE user_course_access ADD COLUMN tier_title VARCHAR(128);",
+            ]
+            for sql in sqlite_migrations:
+                try:
+                    await conn.execute(text(sql))
+                except Exception:
+                    pass
+        else:
+            pg_migrations = [
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(16) DEFAULT 'ru';",
+                "ALTER TABLE courses ADD COLUMN IF NOT EXISTS has_tiers BOOLEAN DEFAULT FALSE;",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tier_id INTEGER;",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tier_title VARCHAR(128);",
+                "ALTER TABLE user_course_access ADD COLUMN IF NOT EXISTS tier_title VARCHAR(128);",
+            ]
+            for sql in pg_migrations:
+                try:
+                    await conn.execute(text(sql))
+                except Exception:
+                    pass
 
     # Seed initial categories, courses & system settings if empty
     async with AsyncSessionLocal() as session:

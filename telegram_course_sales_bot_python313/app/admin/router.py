@@ -11,8 +11,10 @@ import uuid
 import re
 import html
 
+from datetime import datetime
 from app.database.session import get_db
 from app.database.models import User, Course, Order, OrderStatus, PaymentMethod, UserCourseAccess, Category, SystemSetting, SystemLog
+from app.services.notification_service import send_sale_notification_to_group
 
 router = APIRouter()
 
@@ -164,6 +166,130 @@ async def grant_access_admin(
     ))
 
     await db.commit()
+
+    # 1. Generate Single-Use Telegram Channel Invite Link (member_limit=1) & Send to User
+    invite_link = None
+    if course and user and user.telegram_id:
+        try:
+            from app.bot.main import bot
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+            if course.telegram_channel_id:
+                try:
+                    ch_id = int(course.telegram_channel_id) if str(course.telegram_channel_id).replace("-", "").isdigit() else course.telegram_channel_id
+                    invite = await bot.create_chat_invite_link(
+                        chat_id=ch_id,
+                        name=f"Manual: {course.title[:15]} | User: {user.telegram_id}",
+                        member_limit=1,
+                        creates_join_request=False
+                    )
+                    invite_link = invite.invite_link
+                except Exception as link_err:
+                    logger.warning(f"Could not create single-use dynamic invite link: {link_err}")
+
+            if not invite_link:
+                invite_link = course.telegram_channel_id if (course.telegram_channel_id and "t.me" in str(course.telegram_channel_id)) else "https://t.me/"
+
+            new_order.invite_link = invite_link
+            new_order.invite_link_used = False
+            new_order.invite_link_limit = 1
+            await db.commit()
+
+            # Direct message to User with unique access link
+            user_msg = (
+                f"🎉 <b>Вам предоставлен доступ к курсу!</b>\n\n"
+                f"📚 <b>Курс:</b> «{course.title}»\n"
+                f"👤 <b>Автор / Преподаватель:</b> {course.author}\n"
+                f"🔒 <b>Закрытый канал:</b> {course.telegram_channel_title or course.title}\n\n"
+                f"🔗 <b>Ваша персональная ссылка для входа:</b>\n"
+                f"👉 {invite_link}\n\n"
+                f"⚠️ <i>Ссылка сгенерирована персонально для вас. Нажмите на кнопку ниже, чтобы войти в канал:</i>"
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🚀 Перейти в закрытый канал курса", url=invite_link)]
+            ])
+            await bot.send_message(
+                chat_id=user.telegram_id,
+                text=user_msg,
+                reply_markup=kb,
+                parse_mode="HTML"
+            )
+            logger.info(f"Invite link message successfully sent to user {user.telegram_id}")
+        except Exception as e:
+            logger.error(f"Failed to deliver invite link to user {user.telegram_id}: {e}")
+
+    # 2. Send automatic Telegram Notification to Admin Group ID
+    user_display = f"{user.first_name} {user.last_name or ''}".strip()
+    course_title = course.title if course else f"Курс #{course_id}"
+    try:
+        await send_sale_notification_to_group(
+            user_name=f"{user_display} (ID: {user.telegram_id})",
+            user_phone=user.phone or "Н/У",
+            course_title=course_title,
+            amount_uzs=amount,
+            payment_method="Ручная выдача (Admin)",
+            paid_time=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+            db=db
+        )
+    except Exception as e:
+        pass
+
+    return RedirectResponse(url="/admin/#users", status_code=303)
+
+
+@router.post("/access/revoke")
+async def revoke_access_admin(
+    user_id: int = Form(...),
+    course_id: int = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Revoke course access from user (delete UserCourseAccess record, log event, and notify user)
+    """
+    stmt = select(UserCourseAccess).where(
+        UserCourseAccess.user_id == user_id,
+        UserCourseAccess.course_id == course_id
+    )
+    res = await db.execute(stmt)
+    access_record = res.scalar_one_or_none()
+    if access_record:
+        await db.delete(access_record)
+
+    user_res = await db.execute(select(User).where(User.id == user_id))
+    user = user_res.scalar_one_or_none()
+
+    course_res = await db.execute(select(Course).where(Course.id == course_id))
+    course = course_res.scalar_one_or_none()
+
+    course_title = course.title if course else f"Курс #{course_id}"
+    user_tg = user.telegram_id if user else user_id
+
+    db.add(SystemLog(
+        level="WARNING",
+        source="AdminRevoke",
+        message=f"Отозван доступ к курсу «{course_title}» у пользователя ID={user_tg}"
+    ))
+
+    await db.commit()
+
+    # Direct message to user about revoked access
+    if user and user.telegram_id and course:
+        try:
+            from app.bot.main import bot
+            from app.config.settings import settings
+            revoke_msg = (
+                f"ℹ️ <b>Уведомление об изменении доступа</b>\n\n"
+                f"Ваш доступ к курсу «{course.title}» был закрыт администратором.\n\n"
+                f"По всем вопросам обращайтесь в поддержку: {settings.SUPPORT_USERNAME}"
+            )
+            await bot.send_message(
+                chat_id=user.telegram_id,
+                text=revoke_msg,
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.error(f"Failed to send revoke notification to user {user.telegram_id}: {e}")
+
     return RedirectResponse(url="/admin/#users", status_code=303)
 
 

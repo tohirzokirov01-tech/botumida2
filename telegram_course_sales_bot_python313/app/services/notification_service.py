@@ -33,20 +33,25 @@ async def send_sale_notification_to_group(
     db: AsyncSession
 ):
     """
-    Sends sales notification to admin group
+    Sends sales and manual grant notification to admin group
     """
     group_id = await get_admin_group_id(db)
 
     formatted_amount = f"{amount_uzs:,}".replace(",", " ")
 
+    if "Ручн" in payment_method or "Admin" in payment_method or "manual" in str(payment_method).lower():
+        badge_header = "👑 <b>Ручная выдача доступа (Админ)</b>"
+    else:
+        badge_header = "💰 <b>Новая продажа</b>"
+
     message_text = (
-        f"💰 <b>Новая продажа</b>\n\n"
+        f"{badge_header}\n\n"
         f"👤 <b>Пользователь:</b> {user_name}\n"
         f"📞 <b>Телефон:</b> {user_phone}\n"
         f"📚 <b>Курс:</b> "{course_title}"\n"
         f"💵 <b>Сумма:</b> {formatted_amount} сум\n"
-        f"💳 <b>Способ оплаты:</b> {payment_method}\n"
-        f"🕒 <b>Время оплаты:</b> {paid_time}"
+        f"💳 <b>Способ:</b> {payment_method}\n"
+        f"🕒 <b>Время:</b> {paid_time}"
     )
 
     bot = Bot(token=settings.BOT_TOKEN)
@@ -56,8 +61,8 @@ async def send_sale_notification_to_group(
             text=message_text,
             parse_mode="HTML"
         )
-        logger.info(f"Sale notification successfully sent to Telegram group {group_id}")
+        logger.info(f"Notification successfully sent to Telegram group {group_id}")
     except Exception as e:
-        logger.error(f"Failed to send telegram sale notification to group {group_id}: {e}")
+        logger.error(f"Failed to send telegram notification to group {group_id}: {e}")
     finally:
         await bot.session.close()

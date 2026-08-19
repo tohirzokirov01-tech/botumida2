@@ -439,6 +439,19 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     if not course_options:
         course_options = '<option value="">Нет доступных курсов</option>'
 
+    # Build User Options for manual revoke modal
+    user_options = "".join([f'<option value="{u.id}">{u.first_name or ""} {u.last_name or ""} (@{u.username or u.telegram_id})</option>' for u in users])
+    if not user_options:
+        user_options = '<option value="">Нет пользователей</option>'
+
+    # Fetch all user course access records
+    access_res = await db.execute(select(UserCourseAccess))
+    access_list = access_res.scalars().all()
+    user_access_map = {}
+    for acc in access_list:
+        user_access_map.setdefault(acc.user_id, []).append(acc.course_id)
+    courses_map = {c.id: c for c in courses}
+
     # Build HTML rows
     course_rows = ""
     for c in courses:
@@ -487,6 +500,26 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
 
     user_rows = ""
     for u in users:
+        u_name = html.escape(f"{u.first_name or ''} {u.last_name or ''}".strip() or f"User #{u.id}")
+        user_c_ids = user_access_map.get(u.id, [])
+        course_badges = ""
+        if user_c_ids:
+            for cid in user_c_ids:
+                c_obj = courses_map.get(cid)
+                c_name = html.escape(c_obj.title if c_obj else f"Курс #{cid}")
+                course_badges += f"""
+                <span style="display:inline-flex; align-items:center; gap:0.35rem; background:#0f172a; border:1px solid rgba(16,185,129,0.5); color:#34d399; font-size:0.75rem; padding:0.25rem 0.55rem; border-radius:6px; margin:0.15rem 0.2rem 0.15rem 0;">
+                    <span>📚 {c_name}</span>
+                    <form action="/admin/access/revoke" method="POST" style="display:inline; margin:0;" onsubmit="return confirm('Отозвать доступ к курсу &quot;{c_name}&quot; у пользователя {u_name}?');">
+                        <input type="hidden" name="user_id" value="{u.id}">
+                        <input type="hidden" name="course_id" value="{cid}">
+                        <button type="submit" title="Удалить из курса" style="background:transparent; border:none; color:#f87171; cursor:pointer; font-weight:bold; font-size:0.85rem; padding:0 0.15rem; line-height:1; display:inline-flex; align-items:center;">✕</button>
+                    </form>
+                </span>
+                """
+        else:
+            course_badges = '<span style="color:#64748b; font-size:0.8rem; font-style:italic;">Нет активных курсов</span>'
+
         user_rows += f"""
         <tr>
             <td>#{u.id}</td>
@@ -494,10 +527,23 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             <td>@{u.username or '—'}</td>
             <td>{u.phone or '—'}</td>
             <td><code>{u.telegram_id}</code></td>
+            <td>{course_badges}</td>
+            <td style="text-align:right; white-space:nowrap;">
+                <button type="button" 
+                        onclick="prefillGrantUser('{u.telegram_id or u.phone or u.id}')"
+                        style="background:#059669; color:#fff; border:none; padding:0.4rem 0.75rem; border-radius:6px; font-size:0.8rem; font-weight:600; cursor:pointer; margin-right:0.3rem;">
+                    ➕ Выдать курс
+                </button>
+                <button type="button" 
+                        onclick="prefillRevokeUser('{u.id}')"
+                        style="background:#dc2626; color:#fff; border:none; padding:0.4rem 0.75rem; border-radius:6px; font-size:0.8rem; font-weight:600; cursor:pointer;">
+                    🗑️ Отозвать
+                </button>
+            </td>
         </tr>
         """
     if not user_rows:
-        user_rows = "<tr><td colspan='5' style='text-align:center; color:#94a3b8; padding: 1.5rem;'>Пользователи пока не зарегистрированы</td></tr>"
+        user_rows = "<tr><td colspan='7' style='text-align:center; color:#94a3b8; padding: 1.5rem;'>Пользователи пока не зарегистрированы</td></tr>"
 
     order_rows = ""
     for o in orders:
@@ -921,7 +967,10 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             <div id="tab-users" class="tab-content">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
                     <h2 style="font-size: 1.3rem;">👥 Пользователи бота & Доступ</h2>
-                    <button onclick="document.getElementById('grant-access-form').style.display = document.getElementById('grant-access-form').style.display === 'none' ? 'block' : 'none'" style="background:#10b981; color:#fff; border:none; padding:0.5rem 1rem; border-radius:8px; font-weight:600; cursor:pointer;">🔑 Выдать доступ вручную</button>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                        <button onclick="document.getElementById('grant-access-form').style.display = document.getElementById('grant-access-form').style.display === 'none' ? 'block' : 'none'; document.getElementById('revoke-access-form').style.display = 'none';" style="background:#10b981; color:#fff; border:none; padding:0.5rem 1rem; border-radius:8px; font-weight:600; cursor:pointer;">🔑 Выдать доступ вручную</button>
+                        <button onclick="document.getElementById('revoke-access-form').style.display = document.getElementById('revoke-access-form').style.display === 'none' ? 'block' : 'none'; document.getElementById('grant-access-form').style.display = 'none';" style="background:#ef4444; color:#fff; border:none; padding:0.5rem 1rem; border-radius:8px; font-weight:600; cursor:pointer;">🗑️ Отозвать доступ</button>
+                    </div>
                 </div>
 
                 <!-- FORM: MANUAL GRANT ACCESS -->
@@ -953,6 +1002,29 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                     </form>
                 </div>
 
+                <!-- FORM: MANUAL REVOKE ACCESS -->
+                <div id="revoke-access-form" class="card" style="margin-bottom: 1.25rem; display:none; border: 1px solid #ef4444;">
+                    <h3 style="margin-bottom:0.5rem; font-size: 1.1rem; color:#f87171;">🗑️ Отзыв доступа к курсу</h3>
+                    <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:1rem;">Выберите пользователя и курс, к которому требуется закрыть доступ. Запись о доступе будет удалена, а пользователю отправлено уведомление об отзыве.</p>
+                    <form action="/admin/access/revoke" method="POST" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Пользователь *</label>
+                            <select id="revoke-user-select" name="user_id" required style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                                {user_options}
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Выберите курс для отзыва *</label>
+                            <select name="course_id" required style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                                {course_options}
+                            </select>
+                        </div>
+                        <div style="grid-column: 1 / -1;">
+                            <button type="submit" style="background:#ef4444; color:#fff; border:none; padding:0.6rem 1.5rem; border-radius:8px; font-weight:600; cursor:pointer;" onclick="return confirm('Вы уверены, что хотите отозвать доступ к курсу?');">🗑️ Отозвать доступ и уведомить пользователя</button>
+                        </div>
+                    </form>
+                </div>
+
                 <div class="card">
                     <div class="table-responsive">
                         <table>
@@ -963,6 +1035,8 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                                     <th>Username</th>
                                     <th>Телефон</th>
                                     <th>Telegram ID</th>
+                                    <th>Купленные курсы</th>
+                                    <th style="text-align:right;">Действия</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1264,6 +1338,28 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             var modal = document.getElementById('edit-course-modal');
             modal.style.display = 'block';
             modal.scrollIntoView({{ behavior: 'smooth' }});
+        }}
+
+        function prefillGrantUser(identifier) {{
+            var form = document.getElementById('grant-access-form');
+            var input = form.querySelector('input[name="user_identifier"]');
+            if (input) {{
+                input.value = identifier;
+            }}
+            form.style.display = 'block';
+            document.getElementById('revoke-access-form').style.display = 'none';
+            form.scrollIntoView({{ behavior: 'smooth' }});
+        }}
+
+        function prefillRevokeUser(userId) {{
+            var form = document.getElementById('revoke-access-form');
+            var select = document.getElementById('revoke-user-select');
+            if (select) {{
+                select.value = userId;
+            }}
+            form.style.display = 'block';
+            document.getElementById('grant-access-form').style.display = 'none';
+            form.scrollIntoView({{ behavior: 'smooth' }});
         }}
 
         function toggleSidebar() {{

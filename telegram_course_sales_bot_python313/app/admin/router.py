@@ -11,10 +11,11 @@ from sqlalchemy import select, func
 import uuid
 import re
 import html
+import json
 
 from datetime import datetime
 from app.database.session import get_db
-from app.database.models import User, Course, Order, OrderStatus, PaymentMethod, UserCourseAccess, Category, SystemSetting, SystemLog
+from app.database.models import User, Course, CourseTier, Order, OrderStatus, PaymentMethod, UserCourseAccess, Category, SystemSetting, SystemLog
 from app.services.notification_service import send_sale_notification_to_group
 from app.config.settings import settings
 
@@ -33,6 +34,8 @@ async def create_course_admin(
     telegram_channel_title: str = Form(""),
     telegram_channel_id: str = Form(""),
     category_id: Optional[int] = Form(None),
+    has_tiers: Optional[str] = Form("false"),
+    tiers_json: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db)
 ):
     if not category_id:
@@ -47,19 +50,48 @@ async def create_course_admin(
     base_slug = re.sub(r'[^a-zA-Z0-9]', '-', title.lower()).strip('-') or "course"
     slug = f"{base_slug}-{uuid.uuid4().hex[:6]}"
 
+    is_tiered = (has_tiers in ["true", "1", "on"])
+    parsed_tiers = []
+    if is_tiered and tiers_json:
+        try:
+            parsed_tiers = json.loads(tiers_json)
+        except Exception:
+            parsed_tiers = []
+
+    effective_price = price_uzs
+    if is_tiered and parsed_tiers:
+        tier_prices = [int(t.get("price_uzs", price_uzs)) for t in parsed_tiers if t.get("price_uzs")]
+        if tier_prices:
+            effective_price = min(tier_prices)
+
     new_course = Course(
         category_id=category_id,
         title=title,
         slug=slug,
-        price_uzs=price_uzs,
+        price_uzs=effective_price,
         author=author,
         description=description or "Описание курса",
         image_url=image_url or "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80",
         telegram_channel_title=telegram_channel_title or "🔒 Закрытый VIP Telegram-Канал",
         telegram_channel_id=telegram_channel_id or "-1001928374999",
+        has_tiers=bool(is_tiered and parsed_tiers),
         is_published=True
     )
     db.add(new_course)
+    await db.flush()
+
+    if is_tiered and parsed_tiers:
+        for idx, t in enumerate(parsed_tiers):
+            tier_obj = CourseTier(
+                course_id=new_course.id,
+                title=t.get("title", f"Тариф #{idx+1}"),
+                price_uzs=int(t.get("price_uzs", 500000)),
+                description=t.get("description", ""),
+                telegram_channel_title=t.get("telegram_channel_title") or new_course.telegram_channel_title,
+                telegram_channel_id=t.get("telegram_channel_id") or new_course.telegram_channel_id
+            )
+            db.add(tier_obj)
+
     await db.commit()
     return RedirectResponse(url="/admin/#courses", status_code=303)
 
@@ -74,6 +106,8 @@ async def edit_course_admin(
     image_url: str = Form(""),
     telegram_channel_title: str = Form(""),
     telegram_channel_id: str = Form(""),
+    has_tiers: Optional[str] = Form("false"),
+    tiers_json: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db)
 ):
     stmt = select(Course).where(Course.id == course_id)
@@ -81,13 +115,46 @@ async def edit_course_admin(
     course = res.scalars().first()
     if course:
         course.title = title
-        course.price_uzs = price_uzs
         course.author = author
         course.description = description
         if image_url:
             course.image_url = image_url
         course.telegram_channel_title = telegram_channel_title
         course.telegram_channel_id = telegram_channel_id
+
+        is_tiered = (has_tiers in ["true", "1", "on"])
+        parsed_tiers = []
+        if is_tiered and tiers_json:
+            try:
+                parsed_tiers = json.loads(tiers_json)
+            except Exception:
+                parsed_tiers = []
+
+        # Remove old tiers
+        del_stmt = select(CourseTier).where(CourseTier.course_id == course_id)
+        del_res = await db.execute(del_stmt)
+        for old_t in del_res.scalars().all():
+            await db.delete(old_t)
+
+        if is_tiered and parsed_tiers:
+            course.has_tiers = True
+            tier_prices = [int(t.get("price_uzs", price_uzs)) for t in parsed_tiers if t.get("price_uzs")]
+            if tier_prices:
+                course.price_uzs = min(tier_prices)
+            for idx, t in enumerate(parsed_tiers):
+                tier_obj = CourseTier(
+                    course_id=course.id,
+                    title=t.get("title", f"Тариф #{idx+1}"),
+                    price_uzs=int(t.get("price_uzs", 500000)),
+                    description=t.get("description", ""),
+                    telegram_channel_title=t.get("telegram_channel_title") or course.telegram_channel_title,
+                    telegram_channel_id=t.get("telegram_channel_id") or course.telegram_channel_id
+                )
+                db.add(tier_obj)
+        else:
+            course.has_tiers = False
+            course.price_uzs = price_uzs
+
         await db.commit()
     return RedirectResponse(url="/admin/#courses", status_code=303)
 
@@ -110,6 +177,7 @@ async def delete_course_admin(
 async def grant_access_admin(
     user_identifier: str = Form(...),
     course_id: int = Form(...),
+    tier_title: Optional[str] = Form(None),
     reason: str = Form("manual_payment"),
     db: AsyncSession = Depends(get_db)
 ):
@@ -143,6 +211,7 @@ async def grant_access_admin(
         order_number=order_num,
         user_id=user.id,
         course_id=course_id,
+        tier_title=tier_title,
         amount_uzs=amount,
         payment_method=PaymentMethod.ADMIN_GRANT,
         status=OrderStatus.PAID
@@ -156,12 +225,17 @@ async def grant_access_admin(
             UserCourseAccess.course_id == course_id
         )
     )
-    if not access_check.scalars().first():
+    existing_acc = access_check.scalars().first()
+    if not existing_acc:
         db.add(UserCourseAccess(
             user_id=user.id,
             course_id=course_id,
+            tier_title=tier_title,
             granted_by="admin_manual"
         ))
+    else:
+        if tier_title:
+            existing_acc.tier_title = tier_title
 
     db.add(SystemLog(
         level="INFO",
@@ -433,6 +507,12 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     courses_res = await db.execute(select(Course).order_by(Course.id.desc()))
     courses = courses_res.scalars().all()
 
+    tiers_res = await db.execute(select(CourseTier))
+    all_tiers = tiers_res.scalars().all()
+    course_tiers_map = {}
+    for t in all_tiers:
+        course_tiers_map.setdefault(t.course_id, []).append(t)
+
     users_res = await db.execute(select(User).order_by(User.id.desc()).limit(20))
     users = users_res.scalars().all()
 
@@ -461,7 +541,7 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     access_list = access_res.scalars().all()
     user_access_map = {}
     for acc in access_list:
-        user_access_map.setdefault(acc.user_id, []).append(acc.course_id)
+        user_access_map.setdefault(acc.user_id, []).append({"course_id": acc.course_id, "tier_title": acc.tier_title})
     courses_map = {c.id: c for c in courses}
 
     # Build HTML rows
@@ -473,6 +553,27 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
         author_escaped = html.escape(c.author or "", quote=True)
         ch_title = html.escape(c.telegram_channel_title or "", quote=True)
         ch_id = html.escape(c.telegram_channel_id or "", quote=True)
+
+        c_tiers = course_tiers_map.get(c.id, [])
+        is_tiered = bool(c.has_tiers and c_tiers)
+        tiers_payload = [
+            {
+                "id": t.id,
+                "title": t.title,
+                "price_uzs": t.price_uzs,
+                "description": t.description or "",
+                "telegram_channel_title": t.telegram_channel_title or "",
+                "telegram_channel_id": t.telegram_channel_id or ""
+            }
+            for t in c_tiers
+        ]
+        tiers_json_escaped = html.escape(json.dumps(tiers_payload), quote=True)
+
+        if is_tiered:
+            tier_badges = "".join([f'<span style="display:inline-block; background:#0284c7; color:#fff; font-size:0.7rem; font-weight:600; padding:0.15rem 0.4rem; border-radius:4px; margin:0.1rem 0.2rem 0.1rem 0;">💎 {html.escape(t.title)}: {t.price_uzs:,}</span>' for t in c_tiers])
+            price_display = f'<div><span style="color:#38bdf8; font-weight:700;">от {c.price_uzs:,} сум</span> <span style="font-size:0.7rem; color:#94a3b8;">({len(c_tiers)} тарифа)</span></div><div style="margin-top:0.25rem;">{tier_badges}</div>'
+        else:
+            price_display = f'<span style="color:#4ade80; font-weight:600;">{c.price_uzs:,} сум</span> <span style="font-size:0.75rem; color:#94a3b8;">(Фикс.)</span>'
 
         course_rows += f"""
         <tr>
@@ -486,7 +587,7 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                 </div>
             </td>
             <td>{c.author or '—'}</td>
-            <td style="color:#4ade80; font-weight:600;">{c.price_uzs:,} сум</td>
+            <td>{price_display}</td>
             <td><code>{c.telegram_channel_title or 'Не указан'}</code></td>
             <td><span class="badge badge-success">{"Активен" if c.is_published else "Черновик"}</span></td>
             <td style="text-align:right; white-space:nowrap;">
@@ -499,6 +600,8 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                         data-ch-id="{ch_id}"
                         data-desc="{desc_escaped}"
                         data-img="{img_val}"
+                        data-has-tiers="{'true' if is_tiered else 'false'}"
+                        data-tiers="{tiers_json_escaped}"
                         onclick="openEditCourseModal(this)"
                         style="background:#2563eb; color:#fff; border:none; padding:0.4rem 0.75rem; border-radius:6px; font-size:0.8rem; font-weight:600; cursor:pointer; margin-right:0.3rem;">✏️ Редактировать</button>
                 <form action="/admin/courses/{c.id}/delete" method="POST" style="display:inline;" onsubmit="return confirm('Удалить курс &quot;{title_escaped}&quot;?');">
@@ -516,12 +619,15 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
         user_c_ids = user_access_map.get(u.id, [])
         course_badges = ""
         if user_c_ids:
-            for cid in user_c_ids:
+            for item in user_c_ids:
+                cid = item["course_id"]
+                t_title = item.get("tier_title")
                 c_obj = courses_map.get(cid)
                 c_name = html.escape(c_obj.title if c_obj else f"Курс #{cid}")
+                tier_tag = f'<span style="color:#38bdf8; font-size:0.7rem;"> (💎 {html.escape(t_title)})</span>' if t_title else ''
                 course_badges += f"""
                 <span style="display:inline-flex; align-items:center; gap:0.35rem; background:#0f172a; border:1px solid rgba(16,185,129,0.5); color:#34d399; font-size:0.75rem; padding:0.25rem 0.55rem; border-radius:6px; margin:0.15rem 0.2rem 0.15rem 0;">
-                    <span>📚 {c_name}</span>
+                    <span>📚 {c_name}{tier_tag}</span>
                     <form action="/admin/access/revoke" method="POST" style="display:inline; margin:0;" onsubmit="return confirm('Отозвать доступ к курсу &quot;{c_name}&quot; у пользователя {u_name}?');">
                         <input type="hidden" name="user_id" value="{u.id}">
                         <input type="hidden" name="course_id" value="{cid}">
@@ -561,12 +667,15 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     for o in orders:
         status_badge = '<span class="badge badge-success">Оплачен</span>' if o.status == OrderStatus.PAID else '<span class="badge badge-warning">Ожидает</span>'
         pm = o.payment_method.value if hasattr(o.payment_method, 'value') else o.payment_method
+        tier_tag = f' <span style="font-size:0.75rem; color:#38bdf8; font-weight:500;">(💎 {html.escape(o.tier_title)})</span>' if o.tier_title else ''
+        c_obj = courses_map.get(o.course_id)
+        course_name_display = html.escape(c_obj.title if c_obj else f"Курс #{o.course_id}")
         order_rows += f"""
         <tr>
             <td>#{o.id}</td>
             <td><code>{o.order_number}</code></td>
             <td>User #{o.user_id}</td>
-            <td>Course #{o.course_id}</td>
+            <td>{course_name_display}{tier_tag}</td>
             <td style="color:#38bdf8; font-weight:600;">{o.amount_uzs:,} сум</td>
             <td>{pm}</td>
             <td>{status_badge}</td>
@@ -849,14 +958,14 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                 <!-- FORM: CREATE COURSE -->
                 <div id="add-course-form" class="card" style="margin-bottom: 1.25rem; display:none; border: 1px solid #3b82f6;">
                     <h3 style="margin-bottom:1rem; font-size: 1.1rem; color:#38bdf8;">➕ Форма добавления нового курса</h3>
-                    <form action="/admin/courses/create" method="POST" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+                    <form action="/admin/courses/create" method="POST" id="create-course-form-element" onsubmit="return handleCreateCourseSubmit();" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
                         <div>
                             <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Название курса *</label>
                             <input type="text" name="title" required placeholder="Напр. Python & FastAPI Backend" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
                         </div>
                         <div>
-                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Цена (UZS) *</label>
-                            <input type="number" name="price_uzs" required value="500000" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
+                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Базовая / Мин. Цена (UZS) *</label>
+                            <input type="number" id="create-price-input" name="price_uzs" required value="500000" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
                         </div>
                         <div>
                             <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Категория курса</label>
@@ -876,6 +985,26 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                             <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">ID Telegram Канала</label>
                             <input type="text" name="telegram_channel_id" placeholder="-1001928374999" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
                         </div>
+
+                        <!-- TIERS CONFIGURATION BLOCK (CREATE) -->
+                        <div style="grid-column: 1 / -1; background:#1e293b; border:1px solid #334155; border-radius:8px; padding:0.85rem;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; flex-wrap:wrap; gap:0.5rem;">
+                                <div>
+                                    <label style="font-weight:600; color:#38bdf8; display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                                        <input type="checkbox" id="create-has-tiers-checkbox" onchange="toggleCreateTiers(this.checked)" style="transform:scale(1.2);">
+                                        <span>💎 Включить тарифную сетку для этого курса (несколько тарифов/пакетов)</span>
+                                    </label>
+                                    <div style="font-size:0.75rem; color:#94a3b8; margin-top:0.2rem;">Если включено, пользователь сможет выбрать нужный пакет (напр. «Стандарт», «PRO», «VIP с куратором»). Если выключено — действует единая фиксированная цена.</div>
+                                </div>
+                                <button type="button" id="create-add-tier-btn" onclick="addCreateTierRow()" style="display:none; background:#0284c7; color:#fff; border:none; padding:0.35rem 0.75rem; border-radius:6px; font-size:0.8rem; font-weight:600; cursor:pointer;">➕ Добавить тариф</button>
+                            </div>
+                            <div id="create-tiers-container" style="display:none; margin-top:0.5rem;">
+                                <div id="create-tier-rows" style="display:flex; flex-direction:column; gap:0.5rem;"></div>
+                            </div>
+                            <input type="hidden" name="has_tiers" id="create-has-tiers-hidden" value="false">
+                            <input type="hidden" name="tiers_json" id="create-tiers-json-hidden" value="[]">
+                        </div>
+
                         <div style="grid-column: 1 / -1;">
                             <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Описание курса</label>
                             <textarea name="description" rows="2" placeholder="Краткое описание уроков..." style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px; font-family:inherit;"></textarea>
@@ -892,13 +1021,13 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                         <h3 style="font-size: 1.1rem; color:#f59e0b;">✏️ Редактирование курса #<span id="edit-course-id-label"></span></h3>
                         <button type="button" onclick="document.getElementById('edit-course-modal').style.display='none'" style="background:transparent; color:#94a3b8; border:none; font-size:1.2rem; cursor:pointer;">✖</button>
                     </div>
-                    <form id="edit-course-form" action="" method="POST" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+                    <form id="edit-course-form" action="" method="POST" onsubmit="return handleEditCourseSubmit();" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
                         <div>
                             <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Название курса *</label>
                             <input type="text" id="edit-title" name="title" required style="width:100%; background:#1e293b; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
                         </div>
                         <div>
-                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Цена (UZS) *</label>
+                            <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Базовая / Мин. Цена (UZS) *</label>
                             <input type="number" id="edit-price" name="price_uzs" required style="width:100%; background:#1e293b; border:1px solid #334155; color:#4ade80; font-weight:bold; padding:0.55rem; border-radius:8px;">
                         </div>
                         <div>
@@ -917,6 +1046,26 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                             <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">ID Telegram Канала</label>
                             <input type="text" id="edit-tg-id" name="telegram_channel_id" style="width:100%; background:#1e293b; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
                         </div>
+
+                        <!-- TIERS CONFIGURATION BLOCK (EDIT) -->
+                        <div style="grid-column: 1 / -1; background:#1e293b; border:1px solid #334155; border-radius:8px; padding:0.85rem;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; flex-wrap:wrap; gap:0.5rem;">
+                                <div>
+                                    <label style="font-weight:600; color:#f59e0b; display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                                        <input type="checkbox" id="edit-has-tiers-checkbox" onchange="toggleEditTiers(this.checked)" style="transform:scale(1.2);">
+                                        <span>💎 Использовать тарифную сетку для этого курса</span>
+                                    </label>
+                                    <div style="font-size:0.75rem; color:#94a3b8; margin-top:0.2rem;">При включении старые тарифы перезапишутся указанными ниже пакетами.</div>
+                                </div>
+                                <button type="button" id="edit-add-tier-btn" onclick="addEditTierRow()" style="display:none; background:#d97706; color:#fff; border:none; padding:0.35rem 0.75rem; border-radius:6px; font-size:0.8rem; font-weight:600; cursor:pointer;">➕ Добавить тариф</button>
+                            </div>
+                            <div id="edit-tiers-container" style="display:none; margin-top:0.5rem;">
+                                <div id="edit-tier-rows" style="display:flex; flex-direction:column; gap:0.5rem;"></div>
+                            </div>
+                            <input type="hidden" name="has_tiers" id="edit-has-tiers-hidden" value="false">
+                            <input type="hidden" name="tiers_json" id="edit-tiers-json-hidden" value="[]">
+                        </div>
+
                         <div style="grid-column: 1 / -1;">
                             <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">Описание курса</label>
                             <textarea id="edit-description" name="description" rows="3" style="width:100%; background:#1e293b; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px; font-family:inherit;"></textarea>
@@ -1327,6 +1476,145 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     </div>
 
     <script>
+        function createTierRowHtml(prefix, title, price, desc) {{
+            return '<div class="' + prefix + '-tier-row" style="background:#0f172a; border:1px solid #334155; border-radius:6px; padding:0.6rem; display:grid; grid-template-columns: 1.5fr 1fr 2fr 35px; gap:0.5rem; align-items:center;">' +
+                '<div>' +
+                    '<label style="display:block; font-size:0.7rem; color:#94a3b8; margin-bottom:0.15rem;">Тариф (название) *</label>' +
+                    '<input type="text" class="tier-title" value="' + (title || '') + '" placeholder="Напр. Стандарт / PRO / VIP" required style="width:100%; background:#1e293b; border:1px solid #475569; color:#fff; padding:0.35rem 0.5rem; border-radius:4px; font-size:0.85rem;">' +
+                '</div>' +
+                '<div>' +
+                    '<label style="display:block; font-size:0.7rem; color:#94a3b8; margin-bottom:0.15rem;">Цена (UZS) *</label>' +
+                    '<input type="number" class="tier-price" value="' + (price || 500000) + '" required style="width:100%; background:#1e293b; border:1px solid #475569; color:#4ade80; font-weight:600; padding:0.35rem 0.5rem; border-radius:4px; font-size:0.85rem;">' +
+                '</div>' +
+                '<div>' +
+                    '<label style="display:block; font-size:0.7rem; color:#94a3b8; margin-bottom:0.15rem;">Описание тарифа</label>' +
+                    '<input type="text" class="tier-desc" value="' + (desc || '') + '" placeholder="Что входит в пакет..." style="width:100%; background:#1e293b; border:1px solid #475569; color:#fff; padding:0.35rem 0.5rem; border-radius:4px; font-size:0.85rem;">' +
+                '</div>' +
+                '<div style="padding-top:1.1rem; text-align:center;">' +
+                    '<button type="button" onclick="this.closest('.' + prefix + '-tier-row').remove();" style="background:transparent; border:none; color:#ef4444; font-size:1.1rem; cursor:pointer; font-weight:bold;" title="Удалить тариф">✕</button>' +
+                '</div>' +
+            '</div>';
+        }}
+
+        function toggleCreateTiers(checked) {{
+            var container = document.getElementById('create-tiers-container');
+            var addBtn = document.getElementById('create-add-tier-btn');
+            var hiddenFlag = document.getElementById('create-has-tiers-hidden');
+            var rowsDiv = document.getElementById('create-tier-rows');
+            
+            if (checked) {{
+                container.style.display = 'block';
+                addBtn.style.display = 'inline-block';
+                hiddenFlag.value = 'true';
+                if (rowsDiv.children.length === 0) {{
+                    var basePrice = document.getElementById('create-price-input').value || 500000;
+                    rowsDiv.insertAdjacentHTML('beforeend', createTierRowHtml('create', 'Стандарт (Базовый)', basePrice, 'Доступ к материалам курса'));
+                    rowsDiv.insertAdjacentHTML('beforeend', createTierRowHtml('create', 'PRO (С поддержкой)', parseInt(basePrice) * 1.5, 'Материалы + Чат с куратором'));
+                }}
+            }} else {{
+                container.style.display = 'none';
+                addBtn.style.display = 'none';
+                hiddenFlag.value = 'false';
+            }}
+        }}
+
+        function addCreateTierRow() {{
+            var rowsDiv = document.getElementById('create-tier-rows');
+            var count = rowsDiv.children.length + 1;
+            rowsDiv.insertAdjacentHTML('beforeend', createTierRowHtml('create', 'Тариф #' + count, 500000, ''));
+        }}
+
+        function handleCreateCourseSubmit() {{
+            var isTiered = document.getElementById('create-has-tiers-checkbox').checked;
+            var hiddenFlag = document.getElementById('create-has-tiers-hidden');
+            var hiddenJson = document.getElementById('create-tiers-json-hidden');
+            hiddenFlag.value = isTiered ? 'true' : 'false';
+
+            if (isTiered) {{
+                var rows = document.querySelectorAll('.create-tier-row');
+                var tiers = [];
+                for (var i = 0; i < rows.length; i++) {{
+                    var tTitle = rows[i].querySelector('.tier-title').value.trim();
+                    var tPrice = parseInt(rows[i].querySelector('.tier-price').value) || 0;
+                    var tDesc = rows[i].querySelector('.tier-desc').value.trim();
+                    if (tTitle) {{
+                        tiers.push({{
+                            title: tTitle,
+                            price_uzs: tPrice,
+                            description: tDesc
+                        }});
+                    }}
+                }}
+                if (tiers.length === 0) {{
+                    alert('Пожалуйста, добавьте хотя бы 1 тариф или отключите тарифную сетку!');
+                    return false;
+                }}
+                hiddenJson.value = JSON.stringify(tiers);
+            }} else {{
+                hiddenJson.value = '[]';
+            }}
+            return true;
+        }}
+
+        function toggleEditTiers(checked) {{
+            var container = document.getElementById('edit-tiers-container');
+            var addBtn = document.getElementById('edit-add-tier-btn');
+            var hiddenFlag = document.getElementById('edit-has-tiers-hidden');
+            var rowsDiv = document.getElementById('edit-tier-rows');
+            
+            if (checked) {{
+                container.style.display = 'block';
+                addBtn.style.display = 'inline-block';
+                hiddenFlag.value = 'true';
+                if (rowsDiv.children.length === 0) {{
+                    var basePrice = document.getElementById('edit-price').value || 500000;
+                    rowsDiv.insertAdjacentHTML('beforeend', createTierRowHtml('edit', 'Стандарт', basePrice, ''));
+                }}
+            }} else {{
+                container.style.display = 'none';
+                addBtn.style.display = 'none';
+                hiddenFlag.value = 'false';
+            }}
+        }}
+
+        function addEditTierRow() {{
+            var rowsDiv = document.getElementById('edit-tier-rows');
+            var count = rowsDiv.children.length + 1;
+            rowsDiv.insertAdjacentHTML('beforeend', createTierRowHtml('edit', 'Тариф #' + count, 500000, ''));
+        }}
+
+        function handleEditCourseSubmit() {{
+            var isTiered = document.getElementById('edit-has-tiers-checkbox').checked;
+            var hiddenFlag = document.getElementById('edit-has-tiers-hidden');
+            var hiddenJson = document.getElementById('edit-tiers-json-hidden');
+            hiddenFlag.value = isTiered ? 'true' : 'false';
+
+            if (isTiered) {{
+                var rows = document.querySelectorAll('.edit-tier-row');
+                var tiers = [];
+                for (var i = 0; i < rows.length; i++) {{
+                    var tTitle = rows[i].querySelector('.tier-title').value.trim();
+                    var tPrice = parseInt(rows[i].querySelector('.tier-price').value) || 0;
+                    var tDesc = rows[i].querySelector('.tier-desc').value.trim();
+                    if (tTitle) {{
+                        tiers.push({{
+                            title: tTitle,
+                            price_uzs: tPrice,
+                            description: tDesc
+                        }});
+                    }}
+                }}
+                if (tiers.length === 0) {{
+                    alert('Пожалуйста, добавьте хотя бы 1 тариф или отключите тарифную сетку!');
+                    return false;
+                }}
+                hiddenJson.value = JSON.stringify(tiers);
+            }} else {{
+                hiddenJson.value = '[]';
+            }}
+            return true;
+        }}
+
         function openEditCourseModal(btn) {{
             var id = btn.getAttribute('data-id');
             var title = btn.getAttribute('data-title');
@@ -1336,6 +1624,8 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             var channelId = btn.getAttribute('data-ch-id');
             var desc = btn.getAttribute('data-desc');
             var img = btn.getAttribute('data-img');
+            var hasTiers = btn.getAttribute('data-has-tiers') === 'true';
+            var tiersJson = btn.getAttribute('data-tiers') || '[]';
 
             document.getElementById('edit-course-id-label').innerText = id;
             document.getElementById('edit-course-form').action = '/admin/courses/' + id + '/edit';
@@ -1346,6 +1636,26 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             document.getElementById('edit-tg-id').value = channelId || '';
             document.getElementById('edit-description').value = desc || '';
             document.getElementById('edit-image-url').value = img || '';
+
+            var checkbox = document.getElementById('edit-has-tiers-checkbox');
+            checkbox.checked = hasTiers;
+            
+            var rowsDiv = document.getElementById('edit-tier-rows');
+            rowsDiv.innerHTML = '';
+
+            try {{
+                var tiersList = JSON.parse(tiersJson);
+                if (tiersList && tiersList.length > 0) {{
+                    for (var i = 0; i < tiersList.length; i++) {{
+                        var t = tiersList[i];
+                        rowsDiv.insertAdjacentHTML('beforeend', createTierRowHtml('edit', t.title, t.price_uzs, t.description));
+                    }}
+                }}
+            }} catch (e) {{
+                console.error('Error parsing tiers:', e);
+            }}
+
+            toggleEditTiers(hasTiers);
             
             var modal = document.getElementById('edit-course-modal');
             modal.style.display = 'block';

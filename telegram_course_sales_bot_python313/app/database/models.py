@@ -82,11 +82,26 @@ class Course(Base):
     author: Mapped[str] = mapped_column(String(128), default="Instructor")
     telegram_channel_title: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     telegram_channel_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    has_tiers: Mapped[bool] = mapped_column(Boolean, default=False)
     is_published: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     category: Mapped["Category"] = relationship("Category", back_populates="courses")
     lessons: Mapped[List["Lesson"]] = relationship("Lesson", back_populates="course", cascade="all, delete-orphan")
+    tiers: Mapped[List["CourseTier"]] = relationship("CourseTier", back_populates="course", cascade="all, delete-orphan")
+
+
+class CourseTier(Base):
+    __tablename__ = "course_tiers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    price_uzs: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    old_price_uzs: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+    course: Mapped["Course"] = relationship("Course", back_populates="tiers")
 
 
 class Lesson(Base):
@@ -111,6 +126,7 @@ class UserCourseAccess(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), nullable=False)
+    tier_title: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     granted_by: Mapped[str] = mapped_column(String(64), default="payment") # "payment" or "admin_manual"
 
@@ -125,6 +141,8 @@ class Order(Base):
     order_number: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), nullable=False)
+    tier_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tier_title: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     amount_uzs: Mapped[int] = mapped_column(BigInteger, nullable=False)
     payment_method: Mapped[PaymentMethod] = mapped_column(Enum(PaymentMethod))
     status: Mapped[OrderStatus] = mapped_column(Enum(OrderStatus), default=OrderStatus.PENDING)

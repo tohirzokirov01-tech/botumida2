@@ -290,3 +290,45 @@ async def cmd_start(message: types.Message, db: AsyncSession, command: CommandOb
     )
 
     await message.answer(welcome_txt, reply_markup=get_main_keyboard(user_lang), parse_mode="Markdown")
+
+
+@router.message(F.text)
+async def handle_generic_text(message: types.Message, db: AsyncSession):
+    text_query = message.text.strip()
+    # Check if this is a search query for courses
+    from app.database.models import Course
+    stmt = select(Course).where(
+        Course.is_published == True,
+        (Course.title.ilike(f"%{text_query}%")) | (Course.description.ilike(f"%{text_query}%")) | (Course.author.ilike(f"%{text_query}%"))
+    )
+    res = await db.execute(stmt)
+    found_courses = res.scalars().all()
+
+    if found_courses:
+        await message.answer(f"🔍 <b>Найдено курсов по запросу «{text_query}»:</b>", parse_mode="HTML")
+        default_cover = "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80"
+        for c in found_courses:
+            caption = (
+                f"🎓 <b>{c.title}</b>\n\n"
+                f"{c.description[:200]}...\n\n"
+                f"👤 Автор: {c.author}\n"
+                f"💵 Цена: <b>{c.price_uzs:,} сум</b>\n"
+            )
+            kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                [types.InlineKeyboardButton(text="💳 Купить через Payme", callback_data=f"buy_payme_{c.id}")],
+                [types.InlineKeyboardButton(text="🔹 Купить через Click", callback_data=f"buy_click_{c.id}")],
+                [types.InlineKeyboardButton(text="⬅️ В каталог", callback_data="back_categories")]
+            ])
+            img = c.image_url if (c.image_url and c.image_url.startswith("http")) else default_cover
+            try:
+                await message.answer_photo(photo=img, caption=caption, reply_markup=kb, parse_mode="HTML")
+            except Exception:
+                await message.answer_photo(photo=default_cover, caption=caption, reply_markup=kb, parse_mode="HTML")
+        return
+
+    # If nothing matched, send main menu help
+    await message.answer(
+        "👋 Выберите интересующий раздел в меню ниже или нажмите <b>📚 Каталог курсов</b> для просмотра всех доступных материалов:",
+        reply_markup=get_main_keyboard("ru"),
+        parse_mode="HTML"
+    )

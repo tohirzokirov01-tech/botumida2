@@ -12,7 +12,7 @@ import re
 import html
 
 from app.database.session import get_db
-from app.database.models import User, Course, Order, OrderStatus, Category, SystemSetting, SystemLog
+from app.database.models import User, Course, Order, OrderStatus, PaymentMethod, UserCourseAccess, Category, SystemSetting, SystemLog
 
 router = APIRouter()
 
@@ -121,7 +121,8 @@ async def grant_access_admin(
         user = User(
             telegram_id=tg_id,
             first_name="Пользователь (Ручной доступ)",
-            phone=user_identifier if not user_identifier.isdigit() else None
+            phone=user_identifier if not user_identifier.isdigit() else None,
+            referral_code=f"REF{tg_id}"
         )
         db.add(user)
         await db.flush()
@@ -131,18 +132,37 @@ async def grant_access_admin(
     amount = course.price_uzs if course else 0
 
     order_num = f"MANUAL-{uuid.uuid4().hex[:6].upper()}"
-    invite_link = f"https://t.me/+manual_{uuid.uuid4().hex[:10]}"
 
     new_order = Order(
         order_number=order_num,
         user_id=user.id,
         course_id=course_id,
         amount_uzs=amount,
-        payment_method="manual",
-        status=OrderStatus.PAID,
-        invite_link=invite_link
+        payment_method=PaymentMethod.ADMIN_GRANT,
+        status=OrderStatus.PAID
     )
     db.add(new_order)
+
+    # Grant UserCourseAccess
+    access_check = await db.execute(
+        select(UserCourseAccess).where(
+            UserCourseAccess.user_id == user.id,
+            UserCourseAccess.course_id == course_id
+        )
+    )
+    if not access_check.scalars().first():
+        db.add(UserCourseAccess(
+            user_id=user.id,
+            course_id=course_id,
+            granted_by="admin_manual"
+        ))
+
+    db.add(SystemLog(
+        level="INFO",
+        source="AdminGrant",
+        message=f"Выдан ручной доступ к курсу #{course_id} для пользователя ID={user.telegram_id}"
+    ))
+
     await db.commit()
     return RedirectResponse(url="/admin/#users", status_code=303)
 

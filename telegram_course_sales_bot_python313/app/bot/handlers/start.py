@@ -258,6 +258,8 @@ async def process_promocode(message: types.Message, db: AsyncSession):
 
 
 @router.message(CommandStart())
+@router.message(Command("start"))
+@router.message(F.text.in_(["/start", "Главное меню", "🏠 Главное меню", "🏠 Asosiy menyu", "🏠 Асосий меню"]))
 async def cmd_start(message: types.Message, db: AsyncSession, command: CommandObject = None):
     telegram_id = message.from_user.id
     ref_arg = command.args if command else None

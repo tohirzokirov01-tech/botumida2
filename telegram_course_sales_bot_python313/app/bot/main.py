@@ -22,9 +22,9 @@ dp = Dispatcher()
 # Register DB session middleware to inject 'db' AsyncSession into handlers
 dp.update.outer_middleware(DbSessionMiddleware())
 
-# Register Handler Routers
-dp.include_router(start.router)
+# Register Handler Routers (Catalog first so its specific keyboard button filters execute before generic fallback in start)
 dp.include_router(catalog.router)
+dp.include_router(start.router)
 
 
 async def setup_bot_commands(bot_instance: Bot):

@@ -48,7 +48,7 @@ async def send_sale_notification_to_group(
         f"{badge_header}\n\n"
         f"👤 <b>Пользователь:</b> {user_name}\n"
         f"📞 <b>Телефон:</b> {user_phone}\n"
-        f"📚 <b>Курс:</b> "{course_title}"\n"
+        f"📚 <b>Курс:</b> «{course_title}»\n"
         f"💵 <b>Сумма:</b> {formatted_amount} сум\n"
         f"💳 <b>Способ:</b> {payment_method}\n"
         f"🕒 <b>Время:</b> {paid_time}"

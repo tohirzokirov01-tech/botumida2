@@ -476,7 +476,12 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     orders_count = (await db.execute(select(func.count(Order.id)))).scalar() or 0
     
     paid_orders_stmt = select(func.sum(Order.amount_uzs)).where(Order.status == OrderStatus.PAID)
-    total_revenue = (await db.execute(paid_orders_stmt)).scalar() or 0
+    total_revenue_raw = (await db.execute(paid_orders_stmt)).scalar() or 0
+    try:
+        total_revenue_int = int(float(total_revenue_raw))
+    except Exception:
+        total_revenue_int = 0
+    formatted_total_revenue = f"{total_revenue_int:,}".replace(",", " ")
 
     # Fetch settings from DB dynamically
     settings_res = await db.execute(select(SystemSetting))
@@ -555,7 +560,7 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
         category_options = '<option value="">Основная категория</option>'
 
     # Build Course Options for manual grant
-    course_options = "".join([f'<option value="{c.id}">{c.title} ({c.price_uzs:,} сум)</option>' for c in courses])
+    course_options = "".join([f'<option value="{c.id}">{c.title} ({int(c.price_uzs or 0):,} сум)</option>'.replace(",", " ") for c in courses])
     if not course_options:
         course_options = '<option value="">Нет доступных курсов</option>'
 
@@ -598,10 +603,10 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
         tiers_json_escaped = html.escape(json.dumps(tiers_payload), quote=True)
 
         if is_tiered:
-            tier_badges = "".join([f'<span style="display:inline-block; background:#0284c7; color:#fff; font-size:0.7rem; font-weight:600; padding:0.15rem 0.4rem; border-radius:4px; margin:0.1rem 0.2rem 0.1rem 0;">💎 {html.escape(t.title)}: {t.price_uzs:,}</span>' for t in c_tiers])
-            price_display = f'<div><span style="color:#38bdf8; font-weight:700;">от {c.price_uzs:,} сум</span> <span style="font-size:0.7rem; color:#94a3b8;">({len(c_tiers)} тарифа)</span></div><div style="margin-top:0.25rem;">{tier_badges}</div>'
+            tier_badges = "".join([f'<span style="display:inline-block; background:#0284c7; color:#fff; font-size:0.7rem; font-weight:600; padding:0.15rem 0.4rem; border-radius:4px; margin:0.1rem 0.2rem 0.1rem 0;">💎 {html.escape(t.title)}: {int(t.price_uzs or 0):,}</span>'.replace(",", " ") for t in c_tiers])
+            price_display = f'<div><span style="color:#38bdf8; font-weight:700;">от {int(c.price_uzs or 0):,} сум</span> <span style="font-size:0.7rem; color:#94a3b8;">({len(c_tiers)} тарифа)</span></div><div style="margin-top:0.25rem;">{tier_badges}</div>'.replace(",", " ")
         else:
-            price_display = f'<span style="color:#4ade80; font-weight:600;">{c.price_uzs:,} сум</span> <span style="font-size:0.75rem; color:#94a3b8;">(Фикс.)</span>'
+            price_display = f'<span style="color:#4ade80; font-weight:600;">{int(c.price_uzs or 0):,} сум</span> <span style="font-size:0.75rem; color:#94a3b8;">(Фикс.)</span>'.replace(",", " ")
 
         course_rows += f"""
         <tr>
@@ -698,13 +703,14 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
         tier_tag = f' <span style="font-size:0.75rem; color:#38bdf8; font-weight:500;">(💎 {html.escape(o.tier_title)})</span>' if o.tier_title else ''
         c_obj = courses_map.get(o.course_id)
         course_name_display = html.escape(c_obj.title if c_obj else f"Курс #{o.course_id}")
+        order_amount_str = f"{int(o.amount_uzs or 0):,}".replace(",", " ")
         order_rows += f"""
         <tr>
             <td>#{o.id}</td>
             <td><code>{o.order_number}</code></td>
             <td>User #{o.user_id}</td>
             <td>{course_name_display}{tier_tag}</td>
-            <td style="color:#38bdf8; font-weight:600;">{o.amount_uzs:,} сум</td>
+            <td style="color:#38bdf8; font-weight:600;">{order_amount_str} сум</td>
             <td>{pm}</td>
             <td>{status_badge}</td>
         </tr>
@@ -949,7 +955,7 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                     </div>
                     <div class="card">
                         <div class="stat-label">Общая выручка</div>
-                        <div class="stat-value" style="color:#4ade80;">{total_revenue:,} сум</div>
+                        <div class="stat-value" style="color:#4ade80;">{formatted_total_revenue} сум</div>
                     </div>
                 </div>
 

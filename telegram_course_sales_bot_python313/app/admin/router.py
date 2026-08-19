@@ -467,6 +467,7 @@ async def update_dictionary_admin(
     return RedirectResponse(url="/admin/#dictionary", status_code=303)
 
 
+@router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     # Stats queries

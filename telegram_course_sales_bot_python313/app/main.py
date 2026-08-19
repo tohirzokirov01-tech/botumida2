@@ -8,6 +8,7 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config.settings import settings
@@ -22,9 +23,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+polling_task = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global polling_task
     # Startup
     logger.info("Initializing Database connection pool...")
     try:
@@ -48,7 +52,7 @@ async def lifespan(app: FastAPI):
             else:
                 logger.info("Starting bot in long-polling mode...")
                 await bot.delete_webhook(drop_pending_updates=True)
-                asyncio.create_task(dp.start_polling(bot))
+                polling_task = asyncio.create_task(dp.start_polling(bot, handle_signals=False))
                 
             await setup_bot_commands(bot)
             logger.info("🚀 Telegram Bot initialized and polling started successfully.")
@@ -60,6 +64,12 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down application resources...")
     try:
+        if polling_task and not polling_task.done():
+            polling_task.cancel()
+            try:
+                await polling_task
+            except asyncio.CancelledError:
+                pass
         if settings.USE_WEBHOOK and settings.BOT_TOKEN:
             await bot.delete_webhook()
         await bot.session.close()
@@ -86,6 +96,11 @@ app.add_middleware(
 # Register routers
 app.include_router(webhooks_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/admin", tags=["Admin Panel"])
+
+
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/admin")
 
 
 @app.get("/health")

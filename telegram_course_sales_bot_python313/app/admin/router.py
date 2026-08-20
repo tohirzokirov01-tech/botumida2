@@ -2221,13 +2221,22 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             }});
 
             // Render categories
-            var catHtml = '<button type="button" onclick="filterDictCategory(\'all\')" style="background:' + (dictActiveCategory === 'all' ? '#f59e0b' : '#0f172a') + '; color:' + (dictActiveCategory === 'all' ? '#000' : '#94a3b8') + '; border:1px solid #334155; padding:0.35rem 0.75rem; border-radius:20px; font-size:0.75rem; font-weight:600; cursor:pointer;">Все фразы (' + allKeys.length + ')</button>';
+            var catHtml = '<button type="button" data-cat="all" class="dict-cat-filter-btn" style="background:' + (dictActiveCategory === 'all' ? '#f59e0b' : '#0f172a') + '; color:' + (dictActiveCategory === 'all' ? '#000' : '#94a3b8') + '; border:1px solid #334155; padding:0.35rem 0.75rem; border-radius:20px; font-size:0.75rem; font-weight:600; cursor:pointer;">Все фразы (' + allKeys.length + ')</button>';
             (dictCategoryGroups || []).forEach(function(g) {{
                 var isActive = dictActiveCategory === g.name;
                 var gCount = (g.keys || []).length;
-                catHtml += '<button type="button" onclick="filterDictCategory(\'' + g.name + '\')" style="background:' + (isActive ? '#f59e0b' : '#0f172a') + '; color:' + (isActive ? '#000' : '#94a3b8') + '; border:1px solid #334155; padding:0.35rem 0.75rem; border-radius:20px; font-size:0.75rem; font-weight:600; cursor:pointer;">' + g.name + ' (' + gCount + ')</button>';
+                var escapedGName = (g.name || '').replace(/"/g, '&quot;');
+                catHtml += '<button type="button" data-cat="' + escapedGName + '" class="dict-cat-filter-btn" style="background:' + (isActive ? '#f59e0b' : '#0f172a') + '; color:' + (isActive ? '#000' : '#94a3b8') + '; border:1px solid #334155; padding:0.35rem 0.75rem; border-radius:20px; font-size:0.75rem; font-weight:600; cursor:pointer;">' + g.name + ' (' + gCount + ')</button>';
             }});
             catContainer.innerHTML = catHtml;
+
+            // Bind click events on category buttons
+            catContainer.querySelectorAll('.dict-cat-filter-btn').forEach(function(btn) {{
+                btn.onclick = function() {{
+                    var cat = btn.getAttribute('data-cat') || 'all';
+                    filterDictCategory(cat);
+                }};
+            }});
 
             // Filter keys
             var filteredKeys = allKeys.filter(function(k) {{
@@ -2285,15 +2294,25 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                 // Input or Textarea
                 var escapedVal = (val || '').replace(/"/g, '&quot;');
                 if (isMultiLine) {{
-                    cardsHtml += '<textarea oninput="updateDictKey(\'' + k + '\', this.value)" rows="3" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.65rem 0.85rem; border-radius:8px; font-family:inherit; font-size:0.9rem; resize:vertical; line-height:1.5;">' + (val || '') + '</textarea>';
+                    cardsHtml += '<textarea data-dict-key="' + k + '" class="dict-input-field" rows="3" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.65rem 0.85rem; border-radius:8px; font-family:inherit; font-size:0.9rem; resize:vertical; line-height:1.5;">' + (val || '') + '</textarea>';
                 }} else {{
-                    cardsHtml += '<input type="text" value="' + escapedVal + '" oninput="updateDictKey(\'' + k + '\', this.value)" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.65rem 0.85rem; border-radius:8px; font-size:0.9rem;">';
+                    cardsHtml += '<input type="text" data-dict-key="' + k + '" class="dict-input-field" value="' + escapedVal + '" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.65rem 0.85rem; border-radius:8px; font-size:0.9rem;">';
                 }}
 
                 cardsHtml += '</div>';
             }});
 
             container.innerHTML = cardsHtml;
+
+            // Bind input changes
+            container.querySelectorAll('.dict-input-field').forEach(function(field) {{
+                field.oninput = function() {{
+                    var key = field.getAttribute('data-dict-key');
+                    if (key) {{
+                        updateDictKey(key, field.value);
+                    }}
+                }};
+            }});
         }}
 
         window.switchTab = switchTab;

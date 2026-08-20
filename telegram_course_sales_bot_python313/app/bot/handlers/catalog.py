@@ -11,13 +11,47 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database.models import Category, Course, CourseTier, Order, OrderStatus, PaymentMethod, UserCourseAccess, User, SystemSetting
+from app.services.i18n_service import get_phrase, get_active_dictionary
 
 router = Router(name="catalog")
 
 
+async def is_catalog_text(message: types.Message, db: AsyncSession) -> bool:
+    txt = (message.text or "").strip()
+    if txt in ["📚 Каталог курсов", "📚 Kurslar katalogi", "📚 Курслар каталоги", "/catalog"]:
+        return True
+    try:
+        d = await get_active_dictionary(db)
+        for lang in ["ru", "uz_latn", "uz_cyrl"]:
+            if txt == d.get(lang, {}).get("menuCatalog"):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+async def is_mycourses_text(message: types.Message, db: AsyncSession) -> bool:
+    txt = (message.text or "").strip()
+    if txt in ["🎓 Мои курсы", "🎓 Mening kurslarim", "🎓 Менинг курсларим", "/mycourses"]:
+        return True
+    try:
+        d = await get_active_dictionary(db)
+        for lang in ["ru", "uz_latn", "uz_cyrl"]:
+            if txt == d.get(lang, {}).get("menuMyCourses"):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 @router.message(Command("catalog"))
-@router.message(F.text.in_(["📚 Каталог курсов", "📚 Kurslar katalogi", "📚 Курслар каталоги"]))
+@router.message(is_catalog_text)
 async def show_categories(message: types.Message, db: AsyncSession):
+    telegram_id = message.from_user.id
+    user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = user_res.scalar_one_or_none()
+    lang = getattr(user, "language", "ru") if user else "ru"
+
     stmt = select(Category)
     res = await db.execute(stmt)
     categories = res.scalars().all()
@@ -28,18 +62,21 @@ async def show_categories(message: types.Message, db: AsyncSession):
     keyboard.append([InlineKeyboardButton(text="🔍 Поиск курса / Kurs izlash", callback_data="search_course")])
 
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-    await message.answer("📁 <b>Категории онлайн-курсов / Kurslar kategoriyalari:</b>\nВыберите интересующую тему:", reply_markup=reply_markup, parse_mode="HTML")
+    cat_title = await get_phrase("catalogTitle", lang, db=db)
+    await message.answer(f"📁 <b>{cat_title}</b>\nВыберите интересующую тему:", reply_markup=reply_markup, parse_mode="HTML")
 
 
 @router.message(Command("mycourses"))
-@router.message(F.text.in_(["🎓 Мои курсы", "🎓 Mening kurslarim", "🎓 Менинг курсларим"]))
+@router.message(is_mycourses_text)
 async def show_my_courses(message: types.Message, db: AsyncSession):
     telegram_id = message.from_user.id
     user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
     user = user_res.scalar_one_or_none()
+    lang = getattr(user, "language", "ru") if user else "ru"
 
     if not user:
-        await message.answer("У вас пока нет купленных курсов. Откройте <b>📚 Каталог курсов</b> для выбора!", parse_mode="HTML")
+        no_courses_txt = await get_phrase("noPurchasedCourses", lang, db=db)
+        await message.answer(no_courses_txt, parse_mode="HTML")
         return
 
     stmt = (
@@ -51,14 +88,15 @@ async def show_my_courses(message: types.Message, db: AsyncSession):
     rows = res.all()
 
     if not rows:
+        no_courses_txt = await get_phrase("noPurchasedCourses", lang, db=db)
         await message.answer(
-            "🎓 <b>У вас пока нет активных курсов.</b>\n\n"
-            "Перейдите в <b>📚 Каталог курсов</b>, выберите подходящий курс и оплатите его через Payme или CLICK.",
+            f"🎓 <b>{no_courses_txt}</b>",
             parse_mode="HTML"
         )
         return
 
-    text = "🎓 <b>Ваши приобретенные курсы:</b>\n\n"
+    my_courses_header = await get_phrase("myCoursesTitle", lang, db=db)
+    text = f"🎓 <b>{my_courses_header}</b>\n\n"
     keyboard = []
     for c, acc in rows:
         ch_title = c.telegram_channel_title or c.title
@@ -73,6 +111,11 @@ async def show_my_courses(message: types.Message, db: AsyncSession):
 
 @router.callback_query(F.data == "back_categories")
 async def back_to_categories_callback(callback: CallbackQuery, db: AsyncSession):
+    telegram_id = callback.from_user.id
+    user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = user_res.scalar_one_or_none()
+    lang = getattr(user, "language", "ru") if user else "ru"
+
     stmt = select(Category)
     res = await db.execute(stmt)
     categories = res.scalars().all()
@@ -83,7 +126,8 @@ async def back_to_categories_callback(callback: CallbackQuery, db: AsyncSession)
     keyboard.append([InlineKeyboardButton(text="🔍 Поиск курса / Kurs izlash", callback_data="search_course")])
 
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-    await callback.message.answer("📁 <b>Категории онлайн-курсов:</b>\nВыберите тему:", reply_markup=reply_markup, parse_mode="HTML")
+    cat_title = await get_phrase("catalogTitle", lang, db=db)
+    await callback.message.answer(f"📁 <b>{cat_title}</b>\nВыберите тему:", reply_markup=reply_markup, parse_mode="HTML")
     await callback.answer()
 
 
@@ -95,16 +139,26 @@ async def search_course_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("cat_"))
 async def show_courses_by_category(callback: CallbackQuery, db: AsyncSession):
+    telegram_id = callback.from_user.id
+    user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = user_res.scalar_one_or_none()
+    lang = getattr(user, "language", "ru") if user else "ru"
+
     cat_id = int(callback.data.split("_")[1])
     stmt = select(Course).where(Course.category_id == cat_id, Course.is_published == True)
     res = await db.execute(stmt)
     courses = res.scalars().all()
 
     if not courses:
-        await callback.answer("В этой категории пока нет курсов", show_alert=True)
+        no_courses_phrase = await get_phrase("noCoursesFound", lang, db=db)
+        await callback.answer(no_courses_phrase, show_alert=True)
         return
 
     default_cover = "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80"
+    price_label = await get_phrase("price", lang, db=db)
+    payme_btn_txt = await get_phrase("payWithPayme", lang, db=db)
+    click_btn_txt = await get_phrase("payWithClick", lang, db=db)
+    back_txt = await get_phrase("backToCatalog", lang, db=db)
 
     for c in courses:
         # Check if course has tiers
@@ -132,12 +186,12 @@ async def show_courses_by_category(callback: CallbackQuery, db: AsyncSession):
                 f"🎓 <b>{c.title}</b>\n\n"
                 f"{c.description[:200]}...\n\n"
                 f"👤 Автор: {c.author}\n"
-                f"💵 Цена: <b>{c.price_uzs:,} сум</b>\n"
+                f"💵 {price_label} <b>{c.price_uzs:,} сум</b>\n"
             )
-            kb_rows.append([InlineKeyboardButton(text="💳 Купить через Payme", callback_data=f"buy_payme_{c.id}")])
-            kb_rows.append([InlineKeyboardButton(text="🔹 Купить через Click", callback_data=f"buy_click_{c.id}")])
+            kb_rows.append([InlineKeyboardButton(text=payme_btn_txt, callback_data=f"buy_payme_{c.id}")])
+            kb_rows.append([InlineKeyboardButton(text=click_btn_txt, callback_data=f"buy_click_{c.id}")])
 
-        kb_rows.append([InlineKeyboardButton(text="⬅️ Назад в категории", callback_data="back_categories")])
+        kb_rows.append([InlineKeyboardButton(text=back_txt, callback_data="back_categories")])
         kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
         img = c.image_url if (c.image_url and c.image_url.startswith("http")) else default_cover
         try:
@@ -150,6 +204,11 @@ async def show_courses_by_category(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(F.data.startswith("tier_"))
 async def choose_tier_callback(callback: CallbackQuery, db: AsyncSession):
+    telegram_id = callback.from_user.id
+    user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = user_res.scalar_one_or_none()
+    lang = getattr(user, "language", "ru") if user else "ru"
+
     parts = callback.data.split("_")
     course_id = int(parts[1])
     tier_id = int(parts[2])
@@ -164,10 +223,14 @@ async def choose_tier_callback(callback: CallbackQuery, db: AsyncSession):
         await callback.answer("Тариф не найден", show_alert=True)
         return
 
+    payme_btn_txt = await get_phrase("payWithPayme", lang, db=db)
+    click_btn_txt = await get_phrase("payWithClick", lang, db=db)
+    back_txt = await get_phrase("backToCatalog", lang, db=db)
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Оплатить через Payme", callback_data=f"buy_payme_{course.id}_{tier.id}")],
-        [InlineKeyboardButton(text="🔹 Оплатить через Click", callback_data=f"buy_click_{course.id}_{tier.id}")],
-        [InlineKeyboardButton(text="⬅️ Назад к выбору курса", callback_data=f"cat_{course.category_id or 1}")]
+        [InlineKeyboardButton(text=payme_btn_txt, callback_data=f"buy_payme_{course.id}_{tier.id}")],
+        [InlineKeyboardButton(text=click_btn_txt, callback_data=f"buy_click_{course.id}_{tier.id}")],
+        [InlineKeyboardButton(text=back_txt, callback_data=f"cat_{course.category_id or 1}")]
     ])
 
     await callback.message.answer(
@@ -184,6 +247,11 @@ async def choose_tier_callback(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(F.data.startswith("buy_payme_"))
 async def buy_payme_callback(callback: CallbackQuery, db: AsyncSession):
+    telegram_id = callback.from_user.id
+    user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = user_res.scalar_one_or_none()
+    lang = getattr(user, "language", "ru") if user else "ru"
+
     parts = callback.data.split("_")
     course_id = int(parts[2])
     tier_id = int(parts[3]) if len(parts) > 3 else None
@@ -203,9 +271,6 @@ async def buy_payme_callback(callback: CallbackQuery, db: AsyncSession):
             amount_uzs = tier.price_uzs
             tier_title = tier.title
 
-    telegram_id = callback.from_user.id
-    user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
-    user = user_res.scalar_one_or_none()
     if not user:
         user = User(telegram_id=telegram_id, first_name=callback.from_user.first_name, referral_code=f"REF{telegram_id}")
         db.add(user)
@@ -235,14 +300,18 @@ async def buy_payme_callback(callback: CallbackQuery, db: AsyncSession):
     b64_param = base64.b64encode(param_str.encode()).decode()
     pay_url = f"https://checkout.paycom.uz/{b64_param}"
 
+    payme_btn_txt = await get_phrase("payWithPayme", lang, db=db)
+    back_txt = await get_phrase("backToCatalog", lang, db=db)
+    checkout_title = await get_phrase("checkoutTitle", lang, db=db)
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Оплатить в приложении Payme", url=pay_url)],
-        [InlineKeyboardButton(text="⬅️ Назад в каталог", callback_data="back_categories")]
+        [InlineKeyboardButton(text=payme_btn_txt, url=pay_url)],
+        [InlineKeyboardButton(text=back_txt, callback_data="back_categories")]
     ])
 
     tier_label = f" (Тариф: <b>{tier_title}</b>)" if tier_title else ""
     await callback.message.answer(
-        f"🧾 <b>Счет на оплату курса через Payme:</b>\n\n"
+        f"🧾 <b>{checkout_title} (Payme):</b>\n\n"
         f"📚 Курс: <b>{course.title}</b>{tier_label}\n"
         f"💵 К оплате: <b>{amount_uzs:,} сум</b>\n"
         f"🔢 Номер заказа: <code>{order_num}</code>\n\n"
@@ -255,6 +324,11 @@ async def buy_payme_callback(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(F.data.startswith("buy_click_"))
 async def buy_click_callback(callback: CallbackQuery, db: AsyncSession):
+    telegram_id = callback.from_user.id
+    user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = user_res.scalar_one_or_none()
+    lang = getattr(user, "language", "ru") if user else "ru"
+
     parts = callback.data.split("_")
     course_id = int(parts[2])
     tier_id = int(parts[3]) if len(parts) > 3 else None
@@ -274,9 +348,6 @@ async def buy_click_callback(callback: CallbackQuery, db: AsyncSession):
             amount_uzs = tier.price_uzs
             tier_title = tier.title
 
-    telegram_id = callback.from_user.id
-    user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
-    user = user_res.scalar_one_or_none()
     if not user:
         user = User(telegram_id=telegram_id, first_name=callback.from_user.first_name, referral_code=f"REF{telegram_id}")
         db.add(user)
@@ -305,14 +376,18 @@ async def buy_click_callback(callback: CallbackQuery, db: AsyncSession):
 
     click_url = f"https://my.click.uz/services/pay?service_id={service_id}&merchant_id={merchant_id}&amount={amount_uzs}&transaction_param={order_num}"
 
+    click_btn_txt = await get_phrase("payWithClick", lang, db=db)
+    back_txt = await get_phrase("backToCatalog", lang, db=db)
+    checkout_title = await get_phrase("checkoutTitle", lang, db=db)
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔹 Оплатить через CLICK", url=click_url)],
-        [InlineKeyboardButton(text="⬅️ Назад в каталог", callback_data="back_categories")]
+        [InlineKeyboardButton(text=click_btn_txt, url=click_url)],
+        [InlineKeyboardButton(text=back_txt, callback_data="back_categories")]
     ])
 
     tier_label = f" (Тариф: <b>{tier_title}</b>)" if tier_title else ""
     await callback.message.answer(
-        f"🧾 <b>Счет на оплату курса через CLICK:</b>\n\n"
+        f"🧾 <b>{checkout_title} (CLICK):</b>\n\n"
         f"📚 Курс: <b>{course.title}</b>{tier_label}\n"
         f"💵 К оплате: <b>{amount_uzs:,} сум</b>\n"
         f"🔢 Номер заказа: <code>{order_num}</code>\n\n"

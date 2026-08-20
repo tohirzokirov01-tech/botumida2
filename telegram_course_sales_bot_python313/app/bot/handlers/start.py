@@ -1,8 +1,9 @@
 """
 aiogram 3 Start & Registration Handler
-Supports referral link extraction (/start ref_123), user registration & main keyboard.
+Supports referral link extraction (/start ref_123), user registration & dynamic main keyboard.
 """
 import uuid
+from typing import Optional
 from aiogram import Router, F, types
 from aiogram.filters import CommandStart, CommandObject, Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -10,49 +11,113 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database.models import User
+from app.services.i18n_service import get_active_dictionary, get_phrase, DEFAULT_TRANSLATIONS
 
 router = Router(name="start")
 
 
-def get_main_keyboard(lang: str = "ru") -> ReplyKeyboardMarkup:
-    if lang == "uz_latn":
-        return ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="📚 Kurslar katalogi"), KeyboardButton(text="🎓 Mening kurslarim")],
-                [KeyboardButton(text="👤 Profil va balans"), KeyboardButton(text="🎟️ Promokod")],
-                [KeyboardButton(text="🌐 Tilni o'zgartirish"), KeyboardButton(text="💬 Yordam & FAQ")]
-            ],
-            resize_keyboard=True
-        )
-    elif lang == "uz_cyrl":
-        return ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="📚 Курслар каталоги"), KeyboardButton(text="🎓 Менинг курсларим")],
-                [KeyboardButton(text="👤 Профиль ва баланс"), KeyboardButton(text="🎟️ Промокод")],
-                [KeyboardButton(text="🌐 Тилни ўзгартириш"), KeyboardButton(text="💬 Қўллаб-қувватлаш & FAQ")]
-            ],
-            resize_keyboard=True
-        )
-    else:
-        return ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="📚 Каталог курсов"), KeyboardButton(text="🎓 Мои курсы")],
-                [KeyboardButton(text="👤 Личный кабинет"), KeyboardButton(text="🎟️ Промокод")],
-                [KeyboardButton(text="🌐 Сменить язык"), KeyboardButton(text="💬 Поддержка & FAQ")]
-            ],
-            resize_keyboard=True
-        )
+async def get_main_keyboard(lang: str = "ru", db: Optional[AsyncSession] = None) -> ReplyKeyboardMarkup:
+    try:
+        if db:
+            d = await get_active_dictionary(db)
+        else:
+            d = DEFAULT_TRANSLATIONS
+    except Exception:
+        d = DEFAULT_TRANSLATIONS
+
+    lang_dict = d.get(lang, d.get("ru", DEFAULT_TRANSLATIONS["ru"]))
+    catalog_txt = lang_dict.get("menuCatalog", "📚 Каталог курсов")
+    mycourses_txt = lang_dict.get("menuMyCourses", "🎓 Мои курсы")
+    profile_txt = lang_dict.get("menuProfile", "👤 Профиль и баланс")
+    promocode_txt = lang_dict.get("enterPromoCode", "🎟️ Промокод")
+    lang_txt = lang_dict.get("menuLanguage", "🌐 Сменить язык")
+    support_txt = lang_dict.get("menuSupport", "💬 Поддержка & FAQ")
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=catalog_txt), KeyboardButton(text=mycourses_txt)],
+            [KeyboardButton(text=profile_txt), KeyboardButton(text=promocode_txt)],
+            [KeyboardButton(text=lang_txt), KeyboardButton(text=support_txt)]
+        ],
+        resize_keyboard=True
+    )
+
+
+async def is_profile_text(message: types.Message, db: AsyncSession) -> bool:
+    txt = (message.text or "").strip()
+    if txt in ["👤 Личный кабинет", "👤 Профиль и баланс", "👤 Profil va balans", "👤 Профиль ва баланс", "👤 Профиль", "/profile"]:
+        return True
+    try:
+        d = await get_active_dictionary(db)
+        for lang in ["ru", "uz_latn", "uz_cyrl"]:
+            if txt == d.get(lang, {}).get("menuProfile"):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+async def is_promo_text(message: types.Message, db: AsyncSession) -> bool:
+    txt = (message.text or "").strip()
+    if txt in ["🎟️ Промокод", "🎟️ Promokod", "🎟️ Ввести промокод", "🎟️ Promokod kiritish", "🎟️ Промокод киритиш", "/promocode"]:
+        return True
+    try:
+        d = await get_active_dictionary(db)
+        for lang in ["ru", "uz_latn", "uz_cyrl"]:
+            if txt == d.get(lang, {}).get("enterPromoCode"):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+async def is_language_text(message: types.Message, db: AsyncSession) -> bool:
+    txt = (message.text or "").strip()
+    if txt in ["🌐 Сменить язык", "🌐 Tilni o'zgartirish", "🌐 Тилни ўзгартириш", "/language"]:
+        return True
+    try:
+        d = await get_active_dictionary(db)
+        for lang in ["ru", "uz_latn", "uz_cyrl"]:
+            if txt == d.get(lang, {}).get("menuLanguage"):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+async def is_support_text(message: types.Message, db: AsyncSession) -> bool:
+    txt = (message.text or "").strip()
+    if txt in [
+        "💬 Поддержка & FAQ", "💬 Поддержка", "💬 Yordam & FAQ", "💬 Qo'llab-quvvatlash", 
+        "💬 Qo'llab-quvvatlash & FAQ", "💬 Қўллаб-қувватлаш & FAQ", "💬 Қўллаб-қувватлаш", "💬 Ғордам & FAQ", "💬 Ёрдам & FAQ",
+        "/support", "/faq"
+    ]:
+        return True
+    try:
+        d = await get_active_dictionary(db)
+        for lang in ["ru", "uz_latn", "uz_cyrl"]:
+            if txt == d.get(lang, {}).get("menuSupport"):
+                return True
+    except Exception:
+        pass
+    return False
 
 
 @router.message(Command("language"))
-@router.message(F.text.in_(["🌐 Сменить язык", "🌐 Tilni o'zgartirish", "🌐 Тилни ўзгартириш"]))
-async def cmd_language(message: types.Message):
+@router.message(is_language_text)
+async def cmd_language(message: types.Message, db: AsyncSession):
+    telegram_id = message.from_user.id
+    user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = user_res.scalar_one_or_none()
+    lang = getattr(user, "language", "ru") if user else "ru"
+
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru")],
         [types.InlineKeyboardButton(text="🇺🇿 O'zbekcha (Lotin)", callback_data="lang_uz_latn")],
         [types.InlineKeyboardButton(text="🇺🇿 Ўзбекча (Кирилл)", callback_data="lang_uz_cyrl")]
     ])
-    await message.answer("🌐 **Пожалуйста, выберите ваш язык / Iltimos, tilni tanlang:**", reply_markup=kb, parse_mode="Markdown")
+    select_txt = await get_phrase("selectLanguage", lang, db=db)
+    await message.answer(f"🌐 <b>{select_txt}</b>", reply_markup=kb, parse_mode="HTML")
 
 
 @router.callback_query(F.data.startswith("lang_"))
@@ -70,30 +135,31 @@ async def set_language_callback(callback: types.CallbackQuery, db: AsyncSession)
             setattr(user, "language", new_lang)
         await db.commit()
     
-    if new_lang == "uz_latn":
-        txt = "✅ Til muvaffaqiyatli O'zbek tiliga (Lotin) o'zgartirildi! 🇺🇿"
-    elif new_lang == "uz_cyrl":
-        txt = "✅ Тил муваффақиятли Ўзбек тилига (Кирилл) ўзгартирилди! 🇺🇿"
-    else:
-        txt = "✅ Язык успешно изменен на Русский! 🇷🇺"
-        
-    await callback.message.answer(txt, reply_markup=get_main_keyboard(new_lang))
+    txt = await get_phrase("languageSet", new_lang, db=db)
+    main_kb = await get_main_keyboard(new_lang, db=db)
+    await callback.message.answer(txt, reply_markup=main_kb)
     await callback.answer()
 
 
 @router.callback_query(F.data == "act_lang")
-async def act_lang_callback(callback: types.CallbackQuery):
+async def act_lang_callback(callback: types.CallbackQuery, db: AsyncSession):
+    telegram_id = callback.from_user.id
+    user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = user_res.scalar_one_or_none()
+    lang = getattr(user, "language", "ru") if user else "ru"
+
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru")],
         [types.InlineKeyboardButton(text="🇺🇿 O'zbekcha (Lotin)", callback_data="lang_uz_latn")],
         [types.InlineKeyboardButton(text="🇺🇿 Ўзбекча (Кирилл)", callback_data="lang_uz_cyrl")]
     ])
-    await callback.message.answer("🌐 **Пожалуйста, выберите ваш язык / Iltimos, tilni tanlang:**", reply_markup=kb, parse_mode="Markdown")
+    select_txt = await get_phrase("selectLanguage", lang, db=db)
+    await callback.message.answer(f"🌐 <b>{select_txt}</b>", reply_markup=kb, parse_mode="HTML")
     await callback.answer()
 
 
 @router.message(Command("profile"))
-@router.message(F.text.in_(["👤 Личный кабинет", "👤 Profil va balans", "👤 Профиль ва баланс", "👤 Профиль"]))
+@router.message(is_profile_text)
 async def cmd_profile(message: types.Message, db: AsyncSession):
     telegram_id = message.from_user.id
     stmt = select(User).where(User.telegram_id == telegram_id)
@@ -104,80 +170,64 @@ async def cmd_profile(message: types.Message, db: AsyncSession):
     balance = getattr(user, "balance_uzs", 0) if user else 0
     ref_code = getattr(user, "referral_code", f"REF{telegram_id}") if user else f"REF{telegram_id}"
     
-    if user_lang == "uz_latn":
-        txt = (
-            f"👤 **Sizning profilingiz:**\n\n"
-            f"👤 **Ism:** {message.from_user.first_name}\n"
-            f"🆔 **Telegram ID:** `{telegram_id}`\n"
-            f"💵 **Balans:** {balance:,} so'm\n\n"
-            f"🔗 **Taklif havolangiz:**\n"
-            f"`https://t.me/EduStoreBot?start={ref_code}`"
-        )
-        kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="🎟️ Promokod kiritish", callback_data="act_promo")],
-            [types.InlineKeyboardButton(text="🌐 Tilni o'zgartirish", callback_data="act_lang")],
-            [types.InlineKeyboardButton(text="💬 Qo'llab-quvvatlash", callback_data="act_support")]
-        ])
-    elif user_lang == "uz_cyrl":
-        txt = (
-            f"👤 **Сизнинг профилингиз:**\n\n"
-            f"👤 **Исм:** {message.from_user.first_name}\n"
-            f"🆔 **Telegram ID:** `{telegram_id}`\n"
-            f"💵 **Баланс:** {balance:,} сўм\n\n"
-            f"🔗 **Таклиф ҳаволангиз:**\n"
-            f"`https://t.me/EduStoreBot?start={ref_code}`"
-        )
-        kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="🎟️ Промокод киритиш", callback_data="act_promo")],
-            [types.InlineKeyboardButton(text="🌐 Тилни ўзгартириш", callback_data="act_lang")],
-            [types.InlineKeyboardButton(text="💬 Қўллаб-қувватлаш", callback_data="act_support")]
-        ])
-    else:
-        txt = (
-            f"👤 **Ваш личный кабинет:**\n\n"
-            f"👤 **Имя:** {message.from_user.first_name}\n"
-            f"🆔 **Telegram ID:** `{telegram_id}`\n"
-            f"💵 **Баланс:** {balance:,} сум\n\n"
-            f"🔗 **Ваша реферальная ссылка:**\n"
-            f"`https://t.me/EduStoreBot?start={ref_code}`"
-        )
-        kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="🎟️ Активировать промокод", callback_data="act_promo")],
-            [types.InlineKeyboardButton(text="🌐 Сменить язык", callback_data="act_lang")],
-            [types.InlineKeyboardButton(text="💬 Служба поддержки", callback_data="act_support")]
-        ])
+    profile_title = await get_phrase("profileTitle", user_lang, db=db)
+    balance_label = await get_phrase("yourBalance", user_lang, db=db)
+    ref_link_label = await get_phrase("yourRefLink", user_lang, db=db)
+    promo_btn_txt = await get_phrase("enterPromoCode", user_lang, db=db)
+    lang_btn_txt = await get_phrase("menuLanguage", user_lang, db=db)
+    support_btn_txt = await get_phrase("menuSupport", user_lang, db=db)
+
+    first_name = message.from_user.first_name or "Пользователь"
+    txt = (
+        f"👤 <b>{profile_title}</b>\n\n"
+        f"👤 <b>Имя:</b> {first_name}\n"
+        f"🆔 <b>Telegram ID:</b> <code>{telegram_id}</code>\n"
+        f"💵 <b>{balance_label}</b> {balance:,} сум\n\n"
+        f"🔗 <b>{ref_link_label}</b>\n"
+        f"<code>https://t.me/EduStoreBot?start={ref_code}</code>"
+    )
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text=promo_btn_txt, callback_data="act_promo")],
+        [types.InlineKeyboardButton(text=lang_btn_txt, callback_data="act_lang")],
+        [types.InlineKeyboardButton(text=support_btn_txt, callback_data="act_support")]
+    ])
         
-    await message.answer(txt, reply_markup=kb, parse_mode="Markdown")
+    await message.answer(txt, reply_markup=kb, parse_mode="HTML")
 
 
 @router.message(Command("promocode"))
-@router.message(F.text.in_(["🎟️ Промокод", "🎟️ Promokod"]))
+@router.message(is_promo_text)
 @router.callback_query(F.data == "act_promo")
-async def cmd_promocode(event: types.Message | types.CallbackQuery):
+async def cmd_promocode(event: types.Message | types.CallbackQuery, db: AsyncSession = None):
     msg = event.message if isinstance(event, types.CallbackQuery) else event
     txt = (
-        "🎟️ **Активация промокода:**\n\n"
-        "Отправьте секретный промокод в чат (например: **WELCOME20** или **BONUS100K**), "
+        "🎟️ <b>Активация промокода:</b>\n\n"
+        "Отправьте секретный промокод в чат (например: <b>WELCOME20</b> или <b>BONUS100K</b>), "
         "чтобы получить скидку на курсы или бонусы на баланс!"
     )
     if isinstance(event, types.CallbackQuery):
-        await msg.answer(txt, parse_mode="Markdown")
+        await msg.answer(txt, parse_mode="HTML")
         await event.answer()
     else:
-        await msg.answer(txt, parse_mode="Markdown")
+        await msg.answer(txt, parse_mode="HTML")
 
 
 @router.message(Command("support"))
 @router.message(Command("faq"))
-@router.message(F.text.in_([
-    "💬 Поддержка & FAQ", "💬 Поддержка", "💬 Yordam & FAQ", "💬 Qo'llab-quvvatlash", 
-    "💬 Qo'llab-quvvatlash & FAQ", "💬 Қўллаб-қувватлаш & FAQ", "💬 Қўллаб-қувватлаш", "💬 Ғордам & FAQ", "💬 Ёрдам & FAQ"
-]))
+@router.message(is_support_text)
 @router.callback_query(F.data == "act_support")
 async def cmd_support(event: types.Message | types.CallbackQuery, db: AsyncSession = None):
     msg = event.message if isinstance(event, types.CallbackQuery) else event
+    telegram_id = event.from_user.id
+    user_lang = "ru"
+    if db:
+        user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+        user = user_res.scalar_one_or_none()
+        user_lang = getattr(user, "language", "ru") if user else "ru"
+
+    support_title = await get_phrase("supportTitle", user_lang, db=db) if db else "💬 Служба поддержки и контакты:"
     txt = (
-        "💬 <b>Центр поддержки и FAQ:</b>\n\n"
+        f"💬 <b>{support_title}</b>\n\n"
         "Добро пожаловать в центр помощи пользователей! Выберите нужный раздел или задайте вопрос оператору:\n\n"
         "📞 <b>Оператор:</b> @edustore_support\n"
         "📞 <b>Телефон:</b> +998 71 200-00-00"
@@ -284,14 +334,12 @@ async def cmd_start(message: types.Message, db: AsyncSession, command: CommandOb
         await db.commit()
 
     user_lang = getattr(user, "language", "ru") if user else "ru"
-    welcome_txt = (
-        f"👋 **Здравствуйте, {message.from_user.first_name}!**\n\n"
-        "Добро пожаловать в Академию Онлайн-Курсов.\n"
-        "Здесь вы можете приобрести авторские курсы с моментальным доступом к урокам.\n\n"
-        "Выберите нужное действие в меню ниже:"
-    )
+    welcome_phrase = await get_phrase("welcome", user_lang, db=db)
+    user_first_name = message.from_user.first_name or "Пользователь"
+    welcome_txt = f"👋 <b>Здравствуйте, {user_first_name}!</b>\n\n{welcome_phrase}"
 
-    await message.answer(welcome_txt, reply_markup=get_main_keyboard(user_lang), parse_mode="Markdown")
+    kb = await get_main_keyboard(user_lang, db=db)
+    await message.answer(welcome_txt, reply_markup=kb, parse_mode="HTML")
 
 
 @router.message(F.text)
@@ -329,8 +377,15 @@ async def handle_generic_text(message: types.Message, db: AsyncSession):
         return
 
     # If nothing matched, send main menu help
+    telegram_id = message.from_user.id
+    user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = user_res.scalar_one_or_none()
+    user_lang = getattr(user, "language", "ru") if user else "ru"
+    kb = await get_main_keyboard(user_lang, db=db)
+    welcome_phrase = await get_phrase("welcome", user_lang, db=db)
+
     await message.answer(
-        "👋 Выберите интересующий раздел в меню ниже или нажмите <b>📚 Каталог курсов</b> для просмотра всех доступных материалов:",
-        reply_markup=get_main_keyboard("ru"),
+        f"{welcome_phrase}",
+        reply_markup=kb,
         parse_mode="HTML"
     )

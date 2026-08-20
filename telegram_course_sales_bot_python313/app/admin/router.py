@@ -403,8 +403,7 @@ async def update_settings_admin(
     default_language: str = Form("ru"),
     is_sandbox: str = Form("true"),
     bot_token: str = Form(""),
-    welcome_message: str = Form("👋 Добро пожаловать в Академию Онлайн-Курсов!
-Выберите нужный раздел из меню ниже:"),
+    welcome_message: str = Form("👋 Добро пожаловать в Академию Онлайн-Курсов!\nВыберите нужный раздел из меню ниже:"),
     payme_merchant_id: str = Form("64d2910a9b3c4e5f6a7b8c9d"),
     payme_key: str = Form("m$iL&@4!sK7#pQ9%wZ3*xY1"),
     click_merchant_id: str = Form("184920"),
@@ -610,8 +609,7 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     default_language_val = sys_settings.get("default_language", "ru")
     is_sandbox_val = sys_settings.get("is_sandbox", "true")
     bot_token_val = sys_settings.get("bot_token", "")
-    welcome_message_val = sys_settings.get("welcome_message", "👋 Добро пожаловать в Академию Онлайн-Курсов!
-Выберите нужный раздел из меню ниже:")
+    welcome_message_val = sys_settings.get("welcome_message", "👋 Добро пожаловать в Академию Онлайн-Курсов!\nВыберите нужный раздел из меню ниже:")
     payme_merchant_id_val = sys_settings.get("payme_merchant_id", "64d2910a9b3c4e5f6a7b8c9d")
     payme_key_val = sys_settings.get("payme_key", "m$iL&@4!sK7#pQ9%wZ3*xY1")
     click_merchant_id_val = sys_settings.get("click_merchant_id", "184920")

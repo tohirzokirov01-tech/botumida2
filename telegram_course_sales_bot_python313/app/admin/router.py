@@ -1630,22 +1630,30 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     </div>
 
     <script>
+        function removeTierRow(btn) {{
+            var row = btn.closest('.create-tier-row') || btn.closest('.edit-tier-row');
+            if (row) row.remove();
+        }}
+
         function createTierRowHtml(prefix, title, price, desc) {{
+            var safeTitle = (title || '').replace(/"/g, '&quot;');
+            var safeDesc = (desc || '').replace(/"/g, '&quot;');
+            var safePrice = price || 500000;
             return '<div class="' + prefix + '-tier-row" style="background:#0f172a; border:1px solid #334155; border-radius:6px; padding:0.6rem; display:grid; grid-template-columns: 1.5fr 1fr 2fr 35px; gap:0.5rem; align-items:center;">' +
                 '<div>' +
                     '<label style="display:block; font-size:0.7rem; color:#94a3b8; margin-bottom:0.15rem;">Тариф (название) *</label>' +
-                    '<input type="text" class="tier-title" value="' + (title || '') + '" placeholder="Напр. Стандарт / PRO / VIP" required style="width:100%; background:#1e293b; border:1px solid #475569; color:#fff; padding:0.35rem 0.5rem; border-radius:4px; font-size:0.85rem;">' +
+                    '<input type="text" class="tier-title" value="' + safeTitle + '" placeholder="Напр. Стандарт / PRO / VIP" required style="width:100%; background:#1e293b; border:1px solid #475569; color:#fff; padding:0.35rem 0.5rem; border-radius:4px; font-size:0.85rem;">' +
                 '</div>' +
                 '<div>' +
                     '<label style="display:block; font-size:0.7rem; color:#94a3b8; margin-bottom:0.15rem;">Цена (UZS) *</label>' +
-                    '<input type="number" class="tier-price" value="' + (price || 500000) + '" required style="width:100%; background:#1e293b; border:1px solid #475569; color:#4ade80; font-weight:600; padding:0.35rem 0.5rem; border-radius:4px; font-size:0.85rem;">' +
+                    '<input type="number" class="tier-price" value="' + safePrice + '" required style="width:100%; background:#1e293b; border:1px solid #475569; color:#4ade80; font-weight:600; padding:0.35rem 0.5rem; border-radius:4px; font-size:0.85rem;">' +
                 '</div>' +
                 '<div>' +
                     '<label style="display:block; font-size:0.7rem; color:#94a3b8; margin-bottom:0.15rem;">Описание тарифа</label>' +
-                    '<input type="text" class="tier-desc" value="' + (desc || '') + '" placeholder="Что входит в пакет..." style="width:100%; background:#1e293b; border:1px solid #475569; color:#fff; padding:0.35rem 0.5rem; border-radius:4px; font-size:0.85rem;">' +
+                    '<input type="text" class="tier-desc" value="' + safeDesc + '" placeholder="Что входит в пакет..." style="width:100%; background:#1e293b; border:1px solid #475569; color:#fff; padding:0.35rem 0.5rem; border-radius:4px; font-size:0.85rem;">' +
                 '</div>' +
                 '<div style="padding-top:1.1rem; text-align:center;">' +
-                    '<button type="button" onclick="this.closest('.' + prefix + '-tier-row').remove();" style="background:transparent; border:none; color:#ef4444; font-size:1.1rem; cursor:pointer; font-weight:bold;" title="Удалить тариф">✕</button>' +
+                    '<button type="button" onclick="removeTierRow(this)" style="background:transparent; border:none; color:#ef4444; font-size:1.1rem; cursor:pointer; font-weight:bold;" title="Удалить тариф">✕</button>' +
                 '</div>' +
             '</div>';
         }}
@@ -1960,6 +1968,22 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                 alert('Тестовый платеж успешно обработан!');
             }});
         }}
+
+        window.switchTab = switchTab;
+        window.openEditCourseModal = openEditCourseModal;
+        window.toggleSidebar = toggleSidebar;
+        window.prefillGrantUser = prefillGrantUser;
+        window.prefillRevokeUser = prefillRevokeUser;
+        window.removeTierRow = removeTierRow;
+        window.toggleCreateTiers = toggleCreateTiers;
+        window.addCreateTierRow = addCreateTierRow;
+        window.handleCreateCourseSubmit = handleCreateCourseSubmit;
+        window.toggleEditTiers = toggleEditTiers;
+        window.addEditTierRow = addEditTierRow;
+        window.handleEditCourseSubmit = handleEditCourseSubmit;
+        window.runPaymeTest = runPaymeTest;
+        window.runClickTest = runClickTest;
+        window.runEndToEndPurchaseTest = runEndToEndPurchaseTest;
 
         window.addEventListener('DOMContentLoaded', function() {{
             var hash = window.location.hash.replace('#', '');

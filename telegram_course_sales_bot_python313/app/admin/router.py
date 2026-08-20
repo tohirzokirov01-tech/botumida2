@@ -1812,44 +1812,65 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             toggleEditTiers(hasTiers);
             
             var modal = document.getElementById('edit-course-modal');
-            modal.style.display = 'block';
-            modal.scrollIntoView({{ behavior: 'smooth' }});
+            if (modal) {
+                modal.style.display = 'block';
+                try {
+                    modal.scrollIntoView();
+                } catch(e) {}
+            }
         }}
 
         function prefillGrantUser(identifier) {{
             var form = document.getElementById('grant-access-form');
+            if (!form) return;
             var input = form.querySelector('input[name="user_identifier"]');
             if (input) {{
                 input.value = identifier;
             }}
             form.style.display = 'block';
-            document.getElementById('revoke-access-form').style.display = 'none';
-            form.scrollIntoView({{ behavior: 'smooth' }});
+            var revokeForm = document.getElementById('revoke-access-form');
+            if (revokeForm) revokeForm.style.display = 'none';
+            try {
+                form.scrollIntoView();
+            } catch(e) {}
         }}
 
         function prefillRevokeUser(userId) {{
             var form = document.getElementById('revoke-access-form');
+            if (!form) return;
             var select = document.getElementById('revoke-user-select');
             if (select) {{
                 select.value = userId;
             }}
             form.style.display = 'block';
-            document.getElementById('grant-access-form').style.display = 'none';
-            form.scrollIntoView({{ behavior: 'smooth' }});
+            var grantForm = document.getElementById('grant-access-form');
+            if (grantForm) grantForm.style.display = 'none';
+            try {
+                form.scrollIntoView();
+            } catch(e) {}
         }}
 
         function toggleSidebar() {{
-            document.getElementById('sidebar').classList.toggle('open');
+            var sb = document.getElementById('sidebar');
+            if (sb) sb.classList.toggle('open');
         }}
 
         function switchTab(tabId, el) {{
-            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-            document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+            var tabs = document.querySelectorAll('.tab-content');
+            for (var i = 0; i < tabs.length; i++) {
+                tabs[i].classList.remove('active');
+            }
+            
+            var navItems = document.querySelectorAll('.nav-item');
+            for (var j = 0; j < navItems.length; j++) {
+                navItems[j].classList.remove('active');
+            }
             
             var target = document.getElementById('tab-' + tabId);
             if (target) {{
                 target.classList.add('active');
             }}
+            
             if (el) {{
                 el.classList.add('active');
             }} else {{
@@ -1858,7 +1879,8 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             }}
 
             if (window.innerWidth <= 768) {{
-                document.getElementById('sidebar').classList.remove('open');
+                var sb = document.getElementById('sidebar');
+                if (sb) sb.classList.remove('open');
             }}
         }}
 

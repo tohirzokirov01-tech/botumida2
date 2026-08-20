@@ -100,6 +100,8 @@ class CourseTier(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     price_uzs: Mapped[int] = mapped_column(BigInteger, nullable=False)
     old_price_uzs: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    telegram_channel_title: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    telegram_channel_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
 
     course: Mapped["Course"] = relationship("Course", back_populates="tiers")
 

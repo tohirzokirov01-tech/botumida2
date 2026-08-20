@@ -41,6 +41,7 @@ async def init_db():
                 "ALTER TABLE orders ADD COLUMN tier_id INTEGER;",
                 "ALTER TABLE orders ADD COLUMN tier_title VARCHAR(128);",
                 "ALTER TABLE user_course_access ADD COLUMN tier_title VARCHAR(128);",
+                "CREATE TABLE IF NOT EXISTS course_tiers (id INTEGER PRIMARY KEY AUTOINCREMENT, course_id INTEGER REFERENCES courses(id) ON DELETE CASCADE, title VARCHAR(128) NOT NULL, description TEXT, price_uzs BIGINT NOT NULL, old_price_uzs BIGINT, telegram_channel_title VARCHAR(256), telegram_channel_id VARCHAR(128));",
             ]
             for sql in sqlite_migrations:
                 try:
@@ -54,6 +55,9 @@ async def init_db():
                 "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tier_id INTEGER;",
                 "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tier_title VARCHAR(128);",
                 "ALTER TABLE user_course_access ADD COLUMN IF NOT EXISTS tier_title VARCHAR(128);",
+                "CREATE TABLE IF NOT EXISTS course_tiers (id SERIAL PRIMARY KEY, course_id INTEGER REFERENCES courses(id) ON DELETE CASCADE, title VARCHAR(128) NOT NULL, description TEXT, price_uzs BIGINT NOT NULL, old_price_uzs BIGINT, telegram_channel_title VARCHAR(256), telegram_channel_id VARCHAR(128));",
+                "ALTER TABLE course_tiers ADD COLUMN IF NOT EXISTS telegram_channel_title VARCHAR(256);",
+                "ALTER TABLE course_tiers ADD COLUMN IF NOT EXISTS telegram_channel_id VARCHAR(128);",
             ]
             for sql in pg_migrations:
                 try:

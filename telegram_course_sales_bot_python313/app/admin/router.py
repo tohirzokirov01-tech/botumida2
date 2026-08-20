@@ -64,35 +64,40 @@ async def create_course_admin(
         if tier_prices:
             effective_price = min(tier_prices)
 
-    new_course = Course(
-        category_id=category_id,
-        title=title,
-        slug=slug,
-        price_uzs=effective_price,
-        author=author,
-        description=description or "Описание курса",
-        image_url=image_url or "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80",
-        telegram_channel_title=telegram_channel_title or "🔒 Закрытый VIP Telegram-Канал",
-        telegram_channel_id=telegram_channel_id or "-1001928374999",
-        has_tiers=bool(is_tiered and parsed_tiers),
-        is_published=True
-    )
-    db.add(new_course)
-    await db.flush()
+    try:
+        new_course = Course(
+            category_id=category_id,
+            title=title,
+            slug=slug,
+            price_uzs=effective_price,
+            author=author,
+            description=description or "Описание курса",
+            image_url=image_url or "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80",
+            telegram_channel_title=telegram_channel_title or "🔒 Закрытый VIP Telegram-Канал",
+            telegram_channel_id=telegram_channel_id or "-1001928374999",
+            has_tiers=bool(is_tiered and parsed_tiers),
+            is_published=True
+        )
+        db.add(new_course)
+        await db.flush()
 
-    if is_tiered and parsed_tiers:
-        for idx, t in enumerate(parsed_tiers):
-            tier_obj = CourseTier(
-                course_id=new_course.id,
-                title=t.get("title", f"Тариф #{idx+1}"),
-                price_uzs=int(t.get("price_uzs", 500000)),
-                description=t.get("description", ""),
-                telegram_channel_title=t.get("telegram_channel_title") or new_course.telegram_channel_title,
-                telegram_channel_id=t.get("telegram_channel_id") or new_course.telegram_channel_id
-            )
-            db.add(tier_obj)
+        if is_tiered and parsed_tiers:
+            for idx, t in enumerate(parsed_tiers):
+                tier_obj = CourseTier(
+                    course_id=new_course.id,
+                    title=t.get("title", f"Тариф #{idx+1}"),
+                    price_uzs=int(t.get("price_uzs", 500000)),
+                    description=t.get("description", ""),
+                    telegram_channel_title=t.get("telegram_channel_title") or new_course.telegram_channel_title,
+                    telegram_channel_id=t.get("telegram_channel_id") or new_course.telegram_channel_id
+                )
+                db.add(tier_obj)
 
-    await db.commit()
+        await db.commit()
+    except Exception as err:
+        await db.rollback()
+        logger.error(f"Error in create_course_admin: {err}")
+
     return RedirectResponse(url="/admin/#courses", status_code=303)
 
 
@@ -100,7 +105,7 @@ async def create_course_admin(
 async def edit_course_admin(
     course_id: int,
     title: str = Form(...),
-    price_uzs: int = Form(500000),
+    price_uzs: Optional[int] = Form(500000),
     author: str = Form("Инструктор"),
     description: str = Form(""),
     image_url: str = Form(""),
@@ -110,52 +115,57 @@ async def edit_course_admin(
     tiers_json: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(Course).where(Course.id == course_id)
-    res = await db.execute(stmt)
-    course = res.scalars().first()
-    if course:
-        course.title = title
-        course.author = author
-        course.description = description
-        if image_url:
-            course.image_url = image_url
-        course.telegram_channel_title = telegram_channel_title
-        course.telegram_channel_id = telegram_channel_id
+    try:
+        stmt = select(Course).where(Course.id == course_id)
+        res = await db.execute(stmt)
+        course = res.scalars().first()
+        if course:
+            course.title = title
+            course.author = author
+            course.description = description
+            if image_url:
+                course.image_url = image_url
+            course.telegram_channel_title = telegram_channel_title
+            course.telegram_channel_id = telegram_channel_id
 
-        is_tiered = (has_tiers in ["true", "1", "on"])
-        parsed_tiers = []
-        if is_tiered and tiers_json:
-            try:
-                parsed_tiers = json.loads(tiers_json)
-            except Exception:
-                parsed_tiers = []
+            is_tiered = (has_tiers in ["true", "1", "on"])
+            parsed_tiers = []
+            if is_tiered and tiers_json:
+                try:
+                    parsed_tiers = json.loads(tiers_json)
+                except Exception:
+                    parsed_tiers = []
 
-        # Remove old tiers
-        del_stmt = select(CourseTier).where(CourseTier.course_id == course_id)
-        del_res = await db.execute(del_stmt)
-        for old_t in del_res.scalars().all():
-            await db.delete(old_t)
+            # Remove old tiers
+            del_stmt = select(CourseTier).where(CourseTier.course_id == course_id)
+            del_res = await db.execute(del_stmt)
+            for old_t in del_res.scalars().all():
+                await db.delete(old_t)
 
-        if is_tiered and parsed_tiers:
-            course.has_tiers = True
-            tier_prices = [int(t.get("price_uzs", price_uzs)) for t in parsed_tiers if t.get("price_uzs")]
-            if tier_prices:
-                course.price_uzs = min(tier_prices)
-            for idx, t in enumerate(parsed_tiers):
-                tier_obj = CourseTier(
-                    course_id=course.id,
-                    title=t.get("title", f"Тариф #{idx+1}"),
-                    price_uzs=int(t.get("price_uzs", 500000)),
-                    description=t.get("description", ""),
-                    telegram_channel_title=t.get("telegram_channel_title") or course.telegram_channel_title,
-                    telegram_channel_id=t.get("telegram_channel_id") or course.telegram_channel_id
-                )
-                db.add(tier_obj)
-        else:
-            course.has_tiers = False
-            course.price_uzs = price_uzs
+            if is_tiered and parsed_tiers:
+                course.has_tiers = True
+                base_price = price_uzs or 500000
+                tier_prices = [int(t.get("price_uzs", base_price)) for t in parsed_tiers if t.get("price_uzs")]
+                if tier_prices:
+                    course.price_uzs = min(tier_prices)
+                for idx, t in enumerate(parsed_tiers):
+                    tier_obj = CourseTier(
+                        course_id=course.id,
+                        title=t.get("title", f"Тариф #{idx+1}"),
+                        price_uzs=int(t.get("price_uzs", 500000)),
+                        description=t.get("description", ""),
+                        telegram_channel_title=t.get("telegram_channel_title") or course.telegram_channel_title,
+                        telegram_channel_id=t.get("telegram_channel_id") or course.telegram_channel_id
+                    )
+                    db.add(tier_obj)
+            else:
+                course.has_tiers = False
+                course.price_uzs = price_uzs or 500000
 
-        await db.commit()
+            await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error updating course #{course_id}: {e}")
     return RedirectResponse(url="/admin/#courses", status_code=303)
 
 

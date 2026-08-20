@@ -1812,12 +1812,12 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             toggleEditTiers(hasTiers);
             
             var modal = document.getElementById('edit-course-modal');
-            if (modal) {
+            if (modal) {{
                 modal.style.display = 'block';
-                try {
+                try {{
                     modal.scrollIntoView();
-                } catch(e) {}
-            }
+                }} catch(e) {{}}
+            }}
         }}
 
         function prefillGrantUser(identifier) {{
@@ -1830,9 +1830,9 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             form.style.display = 'block';
             var revokeForm = document.getElementById('revoke-access-form');
             if (revokeForm) revokeForm.style.display = 'none';
-            try {
+            try {{
                 form.scrollIntoView();
-            } catch(e) {}
+            }} catch(e) {{}}
         }}
 
         function prefillRevokeUser(userId) {{
@@ -1845,9 +1845,9 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             form.style.display = 'block';
             var grantForm = document.getElementById('grant-access-form');
             if (grantForm) grantForm.style.display = 'none';
-            try {
+            try {{
                 form.scrollIntoView();
-            } catch(e) {}
+            }} catch(e) {{}}
         }}
 
         function toggleSidebar() {{
@@ -1857,14 +1857,14 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
 
         function switchTab(tabId, el) {{
             var tabs = document.querySelectorAll('.tab-content');
-            for (var i = 0; i < tabs.length; i++) {
+            for (var i = 0; i < tabs.length; i++) {{
                 tabs[i].classList.remove('active');
-            }
+            }}
             
             var navItems = document.querySelectorAll('.nav-item');
-            for (var j = 0; j < navItems.length; j++) {
+            for (var j = 0; j < navItems.length; j++) {{
                 navItems[j].classList.remove('active');
-            }
+            }}
             
             var target = document.getElementById('tab-' + tabId);
             if (target) {{

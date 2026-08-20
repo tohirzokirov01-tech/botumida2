@@ -10,7 +10,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.database.models import User
+from app.database.models import User, SystemSetting
 from app.services.i18n_service import get_active_dictionary, get_phrase, DEFAULT_TRANSLATIONS
 
 router = Router(name="start")
@@ -236,18 +236,41 @@ async def cmd_support(event: types.Message | types.CallbackQuery, db: AsyncSessi
     faq_ref_btn = await get_phrase("faqBtnReferral", user_lang, db=db) if db else "🎁 Реферальная программа"
     faq_op_btn = await get_phrase("faqBtnContactOperator", user_lang, db=db) if db else "💬 Написать оператору"
 
+    # Dynamic Support Contacts from system_settings DB table
+    support_username = "@edustore_support"
+    support_link = "https://t.me/edustore_support"
+    support_phone = "+998 71 200-00-00"
+    if db:
+        s_u = await db.execute(select(SystemSetting).where(SystemSetting.key == "support_username"))
+        s_u_row = s_u.scalar_one_or_none()
+        if s_u_row and s_u_row.value:
+            support_username = s_u_row.value
+
+        s_l = await db.execute(select(SystemSetting).where(SystemSetting.key == "support_link"))
+        s_l_row = s_l.scalar_one_or_none()
+        if s_l_row and s_l_row.value:
+            support_link = s_l_row.value
+        elif support_username:
+            clean_u = support_username.lstrip("@")
+            support_link = f"https://t.me/{clean_u}"
+
+        s_p = await db.execute(select(SystemSetting).where(SystemSetting.key == "support_phone"))
+        s_p_row = s_p.scalar_one_or_none()
+        if s_p_row and s_p_row.value:
+            support_phone = s_p_row.value
+
     txt = (
         f"💬 <b>{support_title}</b>\n\n"
         f"{support_welcome}\n\n"
-        f"{operator_lbl} @edustore_support\n"
-        f"{phone_lbl} +998 71 200-00-00"
+        f"{operator_lbl} <b>{support_username}</b>\n"
+        f"{phone_lbl} <b>{support_phone}</b>"
     )
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text=faq_access_btn, callback_data="faq_access")],
         [types.InlineKeyboardButton(text=faq_pay_btn, callback_data="faq_pay")],
         [types.InlineKeyboardButton(text=faq_promo_btn, callback_data="faq_promo")],
         [types.InlineKeyboardButton(text=faq_ref_btn, callback_data="faq_ref")],
-        [types.InlineKeyboardButton(text=f"{faq_op_btn} (@edustore_support)", url="https://t.me/edustore_support")]
+        [types.InlineKeyboardButton(text=f"{faq_op_btn} ({support_username})", url=support_link)]
     ])
     if isinstance(event, types.CallbackQuery):
         await msg.answer(txt, reply_markup=kb, parse_mode="HTML")

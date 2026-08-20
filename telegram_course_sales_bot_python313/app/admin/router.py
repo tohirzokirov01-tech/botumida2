@@ -2270,7 +2270,7 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                 var val = currentDict[k] !== undefined ? currentDict[k] : '';
                 var ruVal = ruDict[k] || '';
                 var gName = keyToGroupMap[k] || 'Прочие фразы';
-                var isMultiLine = val.indexOf('\n') >= 0 || val.length > 60;
+                var isMultiLine = val.indexOf(String.fromCharCode(10)) >= 0 || val.length > 60;
 
                 cardsHtml += '<div style="background:#1e293b; border:1px solid #334155; border-radius:10px; padding:1.15rem; transition:border-color 0.2s ease;">';
                 
@@ -2285,9 +2285,10 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
 
                 // Russian reference when editing Uzbek
                 if (currentDictLang !== 'ru' && ruVal) {{
+                    var ruFormatted = ruVal.split(String.fromCharCode(10)).join('<br>');
                     cardsHtml += '<div style="background:#0f172a; border:1px dashed #334155; padding:0.6rem 0.85rem; border-radius:8px; margin-bottom:0.75rem; font-size:0.825rem; color:#94a3b8;">';
                     cardsHtml += '<span style="color:#64748b; font-weight:600; display:block; font-size:0.75rem; margin-bottom:0.15rem;">🇷🇺 Оригинал (Русский):</span>';
-                    cardsHtml += '<span style="color:#e2e8f0;">' + ruVal.replace(/\n/g, '<br>') + '</span>';
+                    cardsHtml += '<span style="color:#e2e8f0;">' + ruFormatted + '</span>';
                     cardsHtml += '</div>';
                 }}
 

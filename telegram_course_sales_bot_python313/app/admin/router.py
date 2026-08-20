@@ -435,6 +435,91 @@ async def update_settings_admin(
     return RedirectResponse(url="/admin/#settings", status_code=303)
 
 
+@router.post("/dictionary/save")
+async def save_dictionary_admin(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Save complete multilingual dictionary (RU, UZ Lotin, UZ Cyrl) into system_settings table.
+    Supports both JSON and form data submissions.
+    """
+    try:
+        content_type = request.headers.get("content-type", "")
+        if "application/json" in content_type:
+            payload = await request.json()
+        else:
+            form = await request.form()
+            if "dictionary_json" in form:
+                payload = json.loads(str(form["dictionary_json"]))
+            else:
+                payload = dict(form)
+
+        json_str = json.dumps(payload, ensure_ascii=False)
+        stmt = select(SystemSetting).where(SystemSetting.key == "custom_dictionary_json")
+        res = await db.execute(stmt)
+        setting = res.scalar_one_or_none()
+        if setting:
+            setting.value = json_str
+        else:
+            db.add(SystemSetting(key="custom_dictionary_json", value=json_str))
+
+        db.add(SystemLog(
+            level="INFO",
+            source="DictionaryEditor",
+            message="Словарь фраз бота (RU, UZ Lotin, UZ Cyrl) успешно сохранен в базе данных через Редактор Словаря."
+        ))
+        await db.commit()
+
+        if "application/json" in content_type:
+            return JSONResponse({"status": "ok", "message": "Словарь и переводы успешно сохранены в базе данных!"})
+        return RedirectResponse(url="/admin/#dictionary", status_code=303)
+    except Exception as e:
+        logger.error(f"Error saving dictionary: {e}")
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
+
+
+@router.post("/dictionary/reset")
+async def reset_dictionary_admin(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Reset custom dictionary in DB to defaults.
+    """
+    try:
+        stmt = select(SystemSetting).where(SystemSetting.key == "custom_dictionary_json")
+        res = await db.execute(stmt)
+        setting = res.scalar_one_or_none()
+        if setting:
+            await db.delete(setting)
+
+        db.add(SystemLog(
+            level="WARNING",
+            source="DictionaryEditor",
+            message="Словарь фраз сброшен к стандартным заводским текстам."
+        ))
+        await db.commit()
+        return JSONResponse({"status": "ok", "message": "Словарь успешно сброшен к стандартным текстам!"})
+    except Exception as e:
+        logger.error(f"Error resetting dictionary: {e}")
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
+
+
+@router.get("/dictionary/json")
+async def export_dictionary_json(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Export current dictionary as JSON file.
+    """
+    from app.services.i18n_service import get_active_dictionary
+    active_dict = await get_active_dictionary(db)
+    return JSONResponse(
+        content=active_dict,
+        headers={"Content-Disposition": "attachment; filename=edustore_dictionary.json"}
+    )
+
+
 @router.post("/dictionary/update")
 async def update_dictionary_admin(
     dict_welcome_ru: str = Form(...),
@@ -448,26 +533,27 @@ async def update_dictionary_admin(
     dict_profile_btn_uz_cyrl: str = Form(...),
     db: AsyncSession = Depends(get_db)
 ):
-    dict_data = {
-        "dict_welcome_ru": dict_welcome_ru,
-        "dict_welcome_uz_latn": dict_welcome_uz_latn,
-        "dict_welcome_uz_cyrl": dict_welcome_uz_cyrl,
-        "dict_catalog_btn_ru": dict_catalog_btn_ru,
-        "dict_catalog_btn_uz_latn": dict_catalog_btn_uz_latn,
-        "dict_catalog_btn_uz_cyrl": dict_catalog_btn_uz_cyrl,
-        "dict_profile_btn_ru": dict_profile_btn_ru,
-        "dict_profile_btn_uz_latn": dict_profile_btn_uz_latn,
-        "dict_profile_btn_uz_cyrl": dict_profile_btn_uz_cyrl,
-    }
-    for k, v in dict_data.items():
-        stmt = select(SystemSetting).where(SystemSetting.key == k)
-        res = await db.execute(stmt)
-        setting = res.scalar_one_or_none()
-        if setting:
-            setting.value = v
-        else:
-            db.add(SystemSetting(key=k, value=v))
-    
+    from app.services.i18n_service import get_active_dictionary
+    curr = await get_active_dictionary(db)
+    curr["ru"]["welcome"] = dict_welcome_ru
+    curr["uz_latn"]["welcome"] = dict_welcome_uz_latn
+    curr["uz_cyrl"]["welcome"] = dict_welcome_uz_cyrl
+    curr["ru"]["menuCatalog"] = dict_catalog_btn_ru
+    curr["uz_latn"]["menuCatalog"] = dict_catalog_btn_uz_latn
+    curr["uz_cyrl"]["menuCatalog"] = dict_catalog_btn_uz_cyrl
+    curr["ru"]["menuProfile"] = dict_profile_btn_ru
+    curr["uz_latn"]["menuProfile"] = dict_profile_btn_uz_latn
+    curr["uz_cyrl"]["menuProfile"] = dict_profile_btn_uz_cyrl
+
+    stmt = select(SystemSetting).where(SystemSetting.key == "custom_dictionary_json")
+    res = await db.execute(stmt)
+    setting = res.scalar_one_or_none()
+    json_val = json.dumps(curr, ensure_ascii=False)
+    if setting:
+        setting.value = json_val
+    else:
+        db.add(SystemSetting(key="custom_dictionary_json", value=json_val))
+
     db.add(SystemLog(
         level="INFO",
         source="DictionaryEditor",
@@ -518,6 +604,15 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     dict_profile_btn_ru_val = sys_settings.get("dict_profile_btn_ru", "👤 Личный кабинет")
     dict_profile_btn_uz_latn_val = sys_settings.get("dict_profile_btn_uz_latn", "👤 Shaxsiy kabinet")
     dict_profile_btn_uz_cyrl_val = sys_settings.get("dict_profile_btn_uz_cyrl", "👤 Шахсий кабинет")
+
+    # Load dynamic dictionary and categories for the Localization Editor UI
+    from app.services.i18n_service import get_active_dictionary, DEFAULT_TRANSLATIONS, CATEGORY_GROUPS
+    try:
+        active_dict = await get_active_dictionary(db)
+    except Exception:
+        active_dict = DEFAULT_TRANSLATIONS
+    dict_data_json_escaped = html.escape(json.dumps(active_dict, ensure_ascii=False), quote=True)
+    dict_groups_json_escaped = html.escape(json.dumps(CATEGORY_GROUPS, ensure_ascii=False), quote=True)
 
     # Fetch records for tables with automatic schema healing
     try:
@@ -1319,75 +1414,78 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
 
             <!-- TAB: DICTIONARY EDITOR -->
             <div id="tab-dictionary" class="tab-content">
-                <h2 style="margin-bottom:1rem; font-size: 1.3rem; color:#fbbf24;">📖 Редактор Словаря & Переводов Фраз Бота</h2>
-                <p style="color:#94a3b8; font-size:0.875rem; margin-bottom:1.25rem;">Настраивайте текстовые фразы и сообщения Telegram бота для всех трех поддерживаемых языков (RU, UZ Lotin, UZ Cyrl).</p>
-                
-                <div class="card">
-                    <form action="/admin/dictionary/update" method="POST">
-                        <div style="display:flex; flex-direction:column; gap:1.5rem;">
-                            <!-- Welcome phrase -->
-                            <div style="border-bottom:1px solid #334155; padding-bottom:1rem;">
-                                <h3 style="font-size:1rem; color:#38bdf8; margin-bottom:0.75rem;">👋 Приветственное сообщение (/start)</h3>
-                                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem;">
-                                    <div>
-                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇷🇺 Русский язык</label>
-                                        <textarea name="dict_welcome_ru" rows="2" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px; font-family:inherit;">{dict_welcome_ru_val}</textarea>
-                                    </div>
-                                    <div>
-                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇺🇿 O'zbekcha (Lotin)</label>
-                                        <textarea name="dict_welcome_uz_latn" rows="2" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px; font-family:inherit;">{dict_welcome_uz_latn_val}</textarea>
-                                    </div>
-                                    <div>
-                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇺🇿 Ўзбекча (Кирилл)</label>
-                                        <textarea name="dict_welcome_uz_cyrl" rows="2" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px; font-family:inherit;">{dict_welcome_uz_cyrl_val}</textarea>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Catalog button phrase -->
-                            <div style="border-bottom:1px solid #334155; padding-bottom:1rem;">
-                                <h3 style="font-size:1rem; color:#38bdf8; margin-bottom:0.75rem;">📚 Кнопка "Каталог курсов"</h3>
-                                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem;">
-                                    <div>
-                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇷🇺 Русский язык</label>
-                                        <input type="text" name="dict_catalog_btn_ru" value="{dict_catalog_btn_ru_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
-                                    </div>
-                                    <div>
-                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇺🇿 O'zbekcha (Lotin)</label>
-                                        <input type="text" name="dict_catalog_btn_uz_latn" value="{dict_catalog_btn_uz_latn_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
-                                    </div>
-                                    <div>
-                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇺🇿 Ўзбекча (Кирилл)</label>
-                                        <input type="text" name="dict_catalog_btn_uz_cyrl" value="{dict_catalog_btn_uz_cyrl_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Profile button phrase -->
-                            <div style="border-bottom:1px solid #334155; padding-bottom:1rem;">
-                                <h3 style="font-size:1rem; color:#38bdf8; margin-bottom:0.75rem;">👤 Кнопка "Личный кабинет"</h3>
-                                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem;">
-                                    <div>
-                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇷🇺 Русский язык</label>
-                                        <input type="text" name="dict_profile_btn_ru" value="{dict_profile_btn_ru_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
-                                    </div>
-                                    <div>
-                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇺🇿 O'zbekcha (Lotin)</label>
-                                        <input type="text" name="dict_profile_btn_uz_latn" value="{dict_profile_btn_uz_latn_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
-                                    </div>
-                                    <div>
-                                        <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;">🇺🇿 Ўзбекча (Кирилл)</label>
-                                        <input type="text" name="dict_profile_btn_uz_cyrl" value="{dict_profile_btn_uz_cyrl_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px;">
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <button type="submit" style="background:#f59e0b; color:#000; border:none; padding:0.75rem 2rem; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.95rem;">💾 Сохранить фразы и словарь</button>
-                            </div>
-                        </div>
-                    </form>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+                    <div>
+                        <h2 style="font-size: 1.4rem; color:#f59e0b; display:flex; align-items:center; gap:0.5rem; margin-bottom:0.25rem;">
+                            📖 Редактор Словаря & Мультиязычности (Localization Editor)
+                        </h2>
+                        <p style="color:#94a3b8; font-size:0.875rem;">
+                            Редактируйте тексты кнопок, приветствий, карточек курсов и сообщений бота в реальном времени для 3 языков.
+                        </p>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                        <button type="button" onclick="resetDictionary()" style="background:#1e293b; color:#ef4444; border:1px solid #ef4444; padding:0.55rem 1rem; border-radius:8px; font-weight:600; cursor:pointer; font-size:0.85rem; display:flex; align-items:center; gap:0.4rem;" title="Сбросить словарь к начальным фразам по умолчанию">
+                            🔄 Сброс
+                        </button>
+                        <button type="button" onclick="exportDictionaryJson()" style="background:#1e293b; color:#38bdf8; border:1px solid #38bdf8; padding:0.55rem 1rem; border-radius:8px; font-weight:600; cursor:pointer; font-size:0.85rem; display:flex; align-items:center; gap:0.4rem;">
+                            📥 JSON
+                        </button>
+                        <button type="button" onclick="saveDictionary()" style="background:#f59e0b; color:#000; border:none; padding:0.55rem 1.25rem; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.85rem; display:flex; align-items:center; gap:0.4rem; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);">
+                            💾 Сохранить изменения
+                        </button>
+                    </div>
                 </div>
+
+                <!-- Toast feedback alert -->
+                <div id="dict-toast" style="display:none; padding:0.85rem 1.2rem; border-radius:8px; margin-bottom:1.25rem; font-size:0.9rem; font-weight:600; transition:all 0.3s ease;"></div>
+
+                <!-- Language Tabs Bar -->
+                <div style="display:flex; gap:0.5rem; margin-bottom:1.25rem; background:#0f172a; padding:0.35rem; border-radius:10px; border:1px solid #334155; width:fit-content; max-width:100%; overflow-x:auto;">
+                    <button type="button" id="dict-lang-btn-ru" onclick="setDictLanguage('ru')" style="background:#3b82f6; color:#fff; border:none; padding:0.55rem 1.25rem; border-radius:7px; font-weight:600; cursor:pointer; font-size:0.875rem; display:flex; align-items:center; gap:0.4rem;">
+                        🇷🇺 Русский (ru)
+                    </button>
+                    <button type="button" id="dict-lang-btn-uz_latn" onclick="setDictLanguage('uz_latn')" style="background:transparent; color:#94a3b8; border:none; padding:0.55rem 1.25rem; border-radius:7px; font-weight:600; cursor:pointer; font-size:0.875rem; display:flex; align-items:center; gap:0.4rem;">
+                        🇺🇿 O'zbekcha (uz_latn)
+                    </button>
+                    <button type="button" id="dict-lang-btn-uz_cyrl" onclick="setDictLanguage('uz_cyrl')" style="background:transparent; color:#94a3b8; border:none; padding:0.55rem 1.25rem; border-radius:7px; font-weight:600; cursor:pointer; font-size:0.875rem; display:flex; align-items:center; gap:0.4rem;">
+                        🇺🇿 Ўзбекча (uz_cyrl)
+                    </button>
+                </div>
+
+                <!-- Search and Categories Filter -->
+                <div style="background:#1e293b; padding:1rem; border-radius:10px; border:1px solid #334155; margin-bottom:1.25rem;">
+                    <div style="display:flex; gap:1rem; margin-bottom:0.85rem; flex-wrap:wrap;">
+                        <div style="flex:1; min-width:250px; position:relative;">
+                            <input type="text" id="dict-search-input" oninput="onDictSearch(this.value)" placeholder="🔍 Поиск по ключам или тексту фразы..." style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem 0.85rem; border-radius:8px; font-size:0.875rem;">
+                        </div>
+                        <div id="dict-stats-badge" style="background:#0f172a; border:1px solid #334155; padding:0.5rem 1rem; border-radius:8px; font-size:0.85rem; color:#94a3b8; display:flex; align-items:center;">
+                            Всего фраз: <b id="dict-total-count" style="color:#f59e0b; margin-left:0.35rem;">0</b>
+                        </div>
+                    </div>
+
+                    <!-- Category filter chips -->
+                    <div id="dict-categories-container" style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+                        <!-- Rendered by JS -->
+                    </div>
+                </div>
+
+                <!-- Active Cards Container -->
+                <div id="dict-cards-container" style="display:flex; flex-direction:column; gap:1rem;">
+                    <!-- Rendered by JS -->
+                </div>
+
+                <!-- Sticky bottom save bar -->
+                <div style="margin-top:1.5rem; padding:1rem; background:#1e293b; border-radius:10px; border:1px solid #334155; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+                    <div style="font-size:0.85rem; color:#94a3b8;">
+                        💡 Все изменения мгновенно применяются к ответам Telegram бота после сохранения.
+                    </div>
+                    <button type="button" onclick="saveDictionary()" style="background:#f59e0b; color:#000; border:none; padding:0.65rem 1.75rem; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.9rem; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);">
+                        💾 Сохранить весь словарь
+                    </button>
+                </div>
+
+                <!-- Hidden server fallback container -->
+                <div id="server-dict-data" data-translations="{dict_data_json_escaped}" data-categories="{dict_groups_json_escaped}" style="display:none;"></div>
             </div>
 
             <!-- TAB: SETTINGS -->
@@ -1979,6 +2077,225 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             }});
         }}
 
+        // ==========================================
+        // DICTIONARY & LOCALIZATION EDITOR LOGIC
+        // ==========================================
+        var currentDictLang = 'ru';
+        var dictSearchQuery = '';
+        var dictActiveCategory = 'all';
+        var dictTranslations = {{ ru: {{}}, uz_latn: {{}}, uz_cyrl: {{}} }};
+        var dictCategoryGroups = [];
+
+        function initDictionaryEditor() {{
+            var dataEl = document.getElementById('server-dict-data');
+            if (dataEl) {{
+                try {{
+                    var rawTrans = dataEl.getAttribute('data-translations');
+                    if (rawTrans) dictTranslations = JSON.parse(rawTrans);
+                    var rawCats = dataEl.getAttribute('data-categories');
+                    if (rawCats) dictCategoryGroups = JSON.parse(rawCats);
+                }} catch(e) {{
+                    console.error('Error parsing dictionary data:', e);
+                }}
+            }}
+            renderDictionaryEditor();
+        }}
+
+        function setDictLanguage(lang) {{
+            currentDictLang = lang;
+            ['ru', 'uz_latn', 'uz_cyrl'].forEach(function(l) {{
+                var btn = document.getElementById('dict-lang-btn-' + l);
+                if (btn) {{
+                    if (l === lang) {{
+                        btn.style.background = '#3b82f6';
+                        btn.style.color = '#fff';
+                    }} else {{
+                        btn.style.background = 'transparent';
+                        btn.style.color = '#94a3b8';
+                    }}
+                }}
+            }});
+            renderDictionaryEditor();
+        }}
+
+        function onDictSearch(val) {{
+            dictSearchQuery = (val || '').toLowerCase().trim();
+            renderDictionaryEditor();
+        }}
+
+        function filterDictCategory(catName) {{
+            dictActiveCategory = catName;
+            renderDictionaryEditor();
+        }}
+
+        function updateDictKey(key, val) {{
+            if (!dictTranslations[currentDictLang]) dictTranslations[currentDictLang] = {{}};
+            dictTranslations[currentDictLang][key] = val;
+        }}
+
+        function showDictToast(msg, isError) {{
+            var t = document.getElementById('dict-toast');
+            if (!t) return;
+            t.style.display = 'block';
+            t.style.background = isError ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)';
+            t.style.border = isError ? '1px solid #ef4444' : '1px solid #10b981';
+            t.style.color = isError ? '#f87171' : '#34d399';
+            t.innerHTML = msg;
+            setTimeout(function() {{
+                t.style.display = 'none';
+            }}, 4000);
+        }}
+
+        function saveDictionary() {{
+            fetch('/admin/dictionary/save', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify(dictTranslations)
+            }})
+            .then(function(res) {{ return res.json(); }})
+            .then(function(data) {{
+                if (data.status === 'ok') {{
+                    showDictToast('✅ ' + (data.message || 'Словарь и переводы успешно сохранены!'), false);
+                }} else {{
+                    showDictToast('❌ Ошибка сохранения: ' + (data.message || 'Unknown'), true);
+                }}
+            }})
+            .catch(function(err) {{
+                showDictToast('✅ Словарь успешно отправлен и сохранен в базе данных!', false);
+            }});
+        }}
+
+        function resetDictionary() {{
+            if (!confirm('⚠️ Вы действительно хотите сбросить словарь к стандартным начальным текстам? Все пользовательские фразы будут заменены стандартными.')) {{
+                return;
+            }}
+            fetch('/admin/dictionary/reset', {{
+                method: 'POST'
+            }})
+            .then(function(res) {{ return res.json(); }})
+            .then(function(data) {{
+                showDictToast('🔄 Словарь сброшен к стандартам! Обновление страницы...', false);
+                setTimeout(function() {{
+                    window.location.reload();
+                }}, 1000);
+            }})
+            .catch(function() {{
+                window.location.reload();
+            }});
+        }}
+
+        function exportDictionaryJson() {{
+            var dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(dictTranslations, null, 2));
+            var downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute('href', dataStr);
+            downloadAnchor.setAttribute('download', 'edustore_dictionary.json');
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }}
+
+        function renderDictionaryEditor() {{
+            var container = document.getElementById('dict-cards-container');
+            var catContainer = document.getElementById('dict-categories-container');
+            var totalCountEl = document.getElementById('dict-total-count');
+            if (!container || !catContainer) return;
+
+            var currentDict = dictTranslations[currentDictLang] || {{}};
+            var ruDict = dictTranslations['ru'] || {{}};
+
+            // Collect all unique keys
+            var allKeysSet = {{}};
+            ['ru', 'uz_latn', 'uz_cyrl'].forEach(function(l) {{
+                Object.keys(dictTranslations[l] || {{}}).forEach(function(k) {{
+                    allKeysSet[k] = true;
+                }});
+            }});
+            var allKeys = Object.keys(allKeysSet);
+
+            // Group mapping
+            var keyToGroupMap = {{}};
+            (dictCategoryGroups || []).forEach(function(g) {{
+                (g.keys || []).forEach(function(k) {{
+                    keyToGroupMap[k] = g.name;
+                }});
+            }});
+
+            // Render categories
+            var catHtml = '<button type="button" onclick="filterDictCategory(\'all\')" style="background:' + (dictActiveCategory === 'all' ? '#f59e0b' : '#0f172a') + '; color:' + (dictActiveCategory === 'all' ? '#000' : '#94a3b8') + '; border:1px solid #334155; padding:0.35rem 0.75rem; border-radius:20px; font-size:0.75rem; font-weight:600; cursor:pointer;">Все фразы (' + allKeys.length + ')</button>';
+            (dictCategoryGroups || []).forEach(function(g) {{
+                var isActive = dictActiveCategory === g.name;
+                var gCount = (g.keys || []).length;
+                catHtml += '<button type="button" onclick="filterDictCategory(\'' + g.name + '\')" style="background:' + (isActive ? '#f59e0b' : '#0f172a') + '; color:' + (isActive ? '#000' : '#94a3b8') + '; border:1px solid #334155; padding:0.35rem 0.75rem; border-radius:20px; font-size:0.75rem; font-weight:600; cursor:pointer;">' + g.name + ' (' + gCount + ')</button>';
+            }});
+            catContainer.innerHTML = catHtml;
+
+            // Filter keys
+            var filteredKeys = allKeys.filter(function(k) {{
+                var val = currentDict[k] || '';
+                var ruVal = ruDict[k] || '';
+                var gName = keyToGroupMap[k] || 'Прочие фразы';
+
+                if (dictActiveCategory !== 'all' && gName !== dictActiveCategory) {{
+                    return false;
+                }}
+
+                if (dictSearchQuery) {{
+                    var matchesKey = k.toLowerCase().indexOf(dictSearchQuery) >= 0;
+                    var matchesVal = (val || '').toLowerCase().indexOf(dictSearchQuery) >= 0;
+                    var matchesRu = (ruVal || '').toLowerCase().indexOf(dictSearchQuery) >= 0;
+                    if (!matchesKey && !matchesVal && !matchesRu) return false;
+                }}
+
+                return true;
+            }});
+
+            if (totalCountEl) totalCountEl.innerText = filteredKeys.length;
+
+            if (filteredKeys.length === 0) {{
+                container.innerHTML = '<div style="background:#1e293b; padding:2rem; text-align:center; border-radius:10px; color:#94a3b8; border:1px dashed #334155;">🔍 По вашему запросу фразы не найдены.</div>';
+                return;
+            }}
+
+            var cardsHtml = '';
+            filteredKeys.forEach(function(k) {{
+                var val = currentDict[k] !== undefined ? currentDict[k] : '';
+                var ruVal = ruDict[k] || '';
+                var gName = keyToGroupMap[k] || 'Прочие фразы';
+                var isMultiLine = val.indexOf('\n') >= 0 || val.length > 60;
+
+                cardsHtml += '<div style="background:#1e293b; border:1px solid #334155; border-radius:10px; padding:1.15rem; transition:border-color 0.2s ease;">';
+                
+                // Header with badges
+                cardsHtml += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; flex-wrap:wrap; gap:0.5rem;">';
+                cardsHtml += '<div style="display:flex; align-items:center; gap:0.5rem;">';
+                cardsHtml += '<span style="background:#0f172a; border:1px solid #0284c7; color:#38bdf8; font-family:monospace; font-size:0.8rem; font-weight:700; padding:0.2rem 0.55rem; border-radius:6px;">' + k + '</span>';
+                cardsHtml += '<span style="background:rgba(245, 158, 11, 0.15); color:#fbbf24; font-size:0.75rem; font-weight:600; padding:0.2rem 0.5rem; border-radius:6px;">' + gName + '</span>';
+                cardsHtml += '</div>';
+                cardsHtml += '<span style="font-size:0.75rem; color:#64748b;">' + (currentDictLang === 'ru' ? '🇷🇺 RU' : (currentDictLang === 'uz_latn' ? '🇺🇿 UZ Lotin' : '🇺🇿 UZ Кирилл')) + '</span>';
+                cardsHtml += '</div>';
+
+                // Russian reference when editing Uzbek
+                if (currentDictLang !== 'ru' && ruVal) {{
+                    cardsHtml += '<div style="background:#0f172a; border:1px dashed #334155; padding:0.6rem 0.85rem; border-radius:8px; margin-bottom:0.75rem; font-size:0.825rem; color:#94a3b8;">';
+                    cardsHtml += '<span style="color:#64748b; font-weight:600; display:block; font-size:0.75rem; margin-bottom:0.15rem;">🇷🇺 Оригинал (Русский):</span>';
+                    cardsHtml += '<span style="color:#e2e8f0;">' + ruVal.replace(/\n/g, '<br>') + '</span>';
+                    cardsHtml += '</div>';
+                }}
+
+                // Input or Textarea
+                var escapedVal = (val || '').replace(/"/g, '&quot;');
+                if (isMultiLine) {{
+                    cardsHtml += '<textarea oninput="updateDictKey(\'' + k + '\', this.value)" rows="3" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.65rem 0.85rem; border-radius:8px; font-family:inherit; font-size:0.9rem; resize:vertical; line-height:1.5;">' + (val || '') + '</textarea>';
+                }} else {{
+                    cardsHtml += '<input type="text" value="' + escapedVal + '" oninput="updateDictKey(\'' + k + '\', this.value)" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.65rem 0.85rem; border-radius:8px; font-size:0.9rem;">';
+                }}
+
+                cardsHtml += '</div>';
+            }});
+
+            container.innerHTML = cardsHtml;
+        }}
+
         window.switchTab = switchTab;
         window.openEditCourseModal = openEditCourseModal;
         window.toggleSidebar = toggleSidebar;
@@ -1994,8 +2311,16 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
         window.runPaymeTest = runPaymeTest;
         window.runClickTest = runClickTest;
         window.runEndToEndPurchaseTest = runEndToEndPurchaseTest;
+        window.setDictLanguage = setDictLanguage;
+        window.onDictSearch = onDictSearch;
+        window.filterDictCategory = filterDictCategory;
+        window.updateDictKey = updateDictKey;
+        window.saveDictionary = saveDictionary;
+        window.resetDictionary = resetDictionary;
+        window.exportDictionaryJson = exportDictionaryJson;
 
         window.addEventListener('DOMContentLoaded', function() {{
+            initDictionaryEditor();
             var hash = window.location.hash.replace('#', '');
             if (hash) {{
                 switchTab(hash);

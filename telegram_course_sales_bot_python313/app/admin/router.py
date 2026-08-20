@@ -392,11 +392,19 @@ async def revoke_access_admin(
 @router.post("/settings/update")
 async def update_settings_admin(
     bot_name: str = Form("Курсы & Обучение Telegram Bot"),
-    support_username: str = Form("@course_support_uz"),
+    support_username: str = Form("@edustore_support"),
+    support_link: str = Form("https://t.me/edustore_support"),
+    support_phone: str = Form("+998 71 200-00-00"),
+    channel_link: str = Form("https://t.me/edustore_official"),
+    instagram_link: str = Form("https://instagram.com/edustore_uz"),
+    website_link: str = Form("https://edustore.uz"),
     admin_group_id: str = Form("-100293847561"),
     default_currency: str = Form("UZS (сум)"),
     default_language: str = Form("ru"),
     is_sandbox: str = Form("true"),
+    bot_token: str = Form(""),
+    welcome_message: str = Form("👋 Добро пожаловать в Академию Онлайн-Курсов!
+Выберите нужный раздел из меню ниже:"),
     payme_merchant_id: str = Form("64d2910a9b3c4e5f6a7b8c9d"),
     payme_key: str = Form("m$iL&@4!sK7#pQ9%wZ3*xY1"),
     click_merchant_id: str = Form("184920"),
@@ -407,10 +415,17 @@ async def update_settings_admin(
     settings_data = {
         "bot_name": bot_name,
         "support_username": support_username,
+        "support_link": support_link,
+        "support_phone": support_phone,
+        "channel_link": channel_link,
+        "instagram_link": instagram_link,
+        "website_link": website_link,
         "admin_group_id": admin_group_id,
         "default_currency": default_currency,
         "default_language": default_language,
         "is_sandbox": is_sandbox,
+        "bot_token": bot_token,
+        "welcome_message": welcome_message,
         "payme_merchant_id": payme_merchant_id,
         "payme_key": payme_key,
         "click_merchant_id": click_merchant_id,
@@ -429,7 +444,7 @@ async def update_settings_admin(
     db.add(SystemLog(
         level="INFO",
         source="AdminSettings",
-        message="Настройки Payme, Click, Telegram группы и Языка успешно обновлены через Панель Управления."
+        message="Настройки Поддержки, Payme, Click, Telegram группы, Соцсетей и Языка успешно сохранены через Панель Управления."
     ))
     await db.commit()
     return RedirectResponse(url="/admin/#settings", status_code=303)
@@ -584,11 +599,19 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     sys_settings = {s.key: s.value for s in settings_res.scalars().all()}
 
     bot_name_val = sys_settings.get("bot_name", "Курсы & Обучение Telegram Bot")
-    support_username_val = sys_settings.get("support_username", "@course_support_uz")
+    support_username_val = sys_settings.get("support_username", "@edustore_support")
+    support_link_val = sys_settings.get("support_link", "https://t.me/edustore_support")
+    support_phone_val = sys_settings.get("support_phone", "+998 71 200-00-00")
+    channel_link_val = sys_settings.get("channel_link", "https://t.me/edustore_official")
+    instagram_link_val = sys_settings.get("instagram_link", "https://instagram.com/edustore_uz")
+    website_link_val = sys_settings.get("website_link", "https://edustore.uz")
     admin_group_id_val = sys_settings.get("admin_group_id", "-100293847561")
     default_currency_val = sys_settings.get("default_currency", "UZS (сум)")
     default_language_val = sys_settings.get("default_language", "ru")
     is_sandbox_val = sys_settings.get("is_sandbox", "true")
+    bot_token_val = sys_settings.get("bot_token", "")
+    welcome_message_val = sys_settings.get("welcome_message", "👋 Добро пожаловать в Академию Онлайн-Курсов!
+Выберите нужный раздел из меню ниже:")
     payme_merchant_id_val = sys_settings.get("payme_merchant_id", "64d2910a9b3c4e5f6a7b8c9d")
     payme_key_val = sys_settings.get("payme_key", "m$iL&@4!sK7#pQ9%wZ3*xY1")
     click_merchant_id_val = sys_settings.get("click_merchant_id", "184920")
@@ -1494,13 +1517,14 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                 <div class="card">
                     <form action="/admin/settings/update" method="POST">
                         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.25rem;">
+                            
+                            <!-- 1. Основные параметры и локализация -->
+                            <div style="grid-column: 1 / -1; border-bottom: 1px solid #334155; padding-bottom: 0.5rem; margin-bottom: 0.25rem;">
+                                <h3 style="color:#f8fafc; font-size:1.05rem; display:flex; align-items:center; gap:0.5rem;">🌐 1. Основные параметры и локализация</h3>
+                            </div>
                             <div>
                                 <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Название Бота</label>
                                 <input type="text" name="bot_name" value="{bot_name_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
-                            </div>
-                            <div>
-                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Telegram Поддержки (@username)</label>
-                                <input type="text" name="support_username" value="{support_username_val}" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
                             </div>
                             <div>
                                 <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">ID Telegram Группы Уведомлений</label>
@@ -1526,38 +1550,76 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                                 </select>
                             </div>
 
-                            <!-- PAYME SETTINGS -->
-                            <div style="grid-column: 1 / -1; margin-top: 0.5rem; border-t: 1px solid #334155; padding-top: 1rem;">
-                                <h3 style="color:#38bdf8; font-size:1rem; margin-bottom:0.75rem; display:flex; align-items:center; gap:0.5rem;">💳 Настройки Интеграции Payme Merchant API</h3>
+                            <!-- 2. Контакты поддержки и соцсети -->
+                            <div style="grid-column: 1 / -1; margin-top: 0.75rem; border-top: 1px solid #334155; padding-top: 1.25rem;">
+                                <h3 style="color:#a855f7; font-size:1.05rem; margin-bottom:0.25rem; display:flex; align-items:center; gap:0.5rem;">💬 2. Контакты Технической Поддержки и Социальные сети</h3>
+                                <p style="color:#94a3b8; font-size:0.8rem; margin-bottom:0.75rem;">Эти контакты отправляются пользователю при нажатии кнопок помощи, FAQ и связи с оператором в боте.</p>
                             </div>
                             <div>
-                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Payme Merchant ID</label>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Telegram Поддержки (@username)</label>
+                                <input type="text" name="support_username" value="{support_username_val}" placeholder="@edustore_support" style="width:100%; background:#0f172a; border:1px solid #334155; color:#c084fc; padding:0.6rem; border-radius:8px;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">🔗 Прямая ссылка на техподдержку (URL)</label>
+                                <input type="text" name="support_link" value="{support_link_val}" placeholder="https://t.me/edustore_support" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">📱 Телефон горячей линии / Поддержки</label>
+                                <input type="text" name="support_phone" value="{support_phone_val}" placeholder="+998 71 200-00-00" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">📢 Официальный Telegram-канал</label>
+                                <input type="text" name="channel_link" value="{channel_link_val}" placeholder="https://t.me/edustore_official" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">📸 Instagram профиль</label>
+                                <input type="text" name="instagram_link" value="{instagram_link_val}" placeholder="https://instagram.com/edustore_uz" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">🌐 Официальный Веб-сайт</label>
+                                <input type="text" name="website_link" value="{website_link_val}" placeholder="https://edustore.uz" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px;">
+                            </div>
+
+                            <!-- 3. Платежные шлюзы -->
+                            <div style="grid-column: 1 / -1; margin-top: 0.75rem; border-top: 1px solid #334155; padding-top: 1.25rem;">
+                                <h3 style="color:#38bdf8; font-size:1.05rem; margin-bottom:0.25rem; display:flex; align-items:center; gap:0.5rem;">💳 3. Платежная интеграция и Bot Token</h3>
+                            </div>
+                            <div style="grid-column: 1 / -1;">
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">🤖 Telegram Bot Token (API токен бота)</label>
+                                <input type="password" name="bot_token" value="{bot_token_val}" placeholder="7123456789:AAH... (из @BotFather)" style="width:100%; background:#0f172a; border:1px solid #334155; color:#4ade80; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">💳 Payme Merchant ID</label>
                                 <input type="text" name="payme_merchant_id" value="{payme_merchant_id_val}" placeholder="64d2910a9b3c4e5f..." style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
                             </div>
                             <div>
-                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Payme Secret Key (Пароль кассы / Key)</label>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">🔑 Payme Secret Key (Пароль кассы / Key)</label>
                                 <input type="text" name="payme_key" value="{payme_key_val}" placeholder="Ключ авторизации Payme Webhook" style="width:100%; background:#0f172a; border:1px solid #334155; color:#f59e0b; padding:0.6rem; border-radius:8px; font-family:monospace;">
                             </div>
-
-                            <!-- CLICK SETTINGS -->
-                            <div style="grid-column: 1 / -1; margin-top: 0.5rem; border-t: 1px solid #334155; padding-top: 1rem;">
-                                <h3 style="color:#60a5fa; font-size:1rem; margin-bottom:0.75rem; display:flex; align-items:center; gap:0.5rem;">🔹 Настройки Интеграции CLICK Merchant API</h3>
-                            </div>
                             <div>
-                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Click Merchant ID</label>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">🔹 Click Merchant ID</label>
                                 <input type="text" name="click_merchant_id" value="{click_merchant_id_val}" placeholder="184920" style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
                             </div>
                             <div>
-                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Click Service ID</label>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">🔹 Click Service ID</label>
                                 <input type="text" name="click_service_id" value="{click_service_id_val}" placeholder="39201" style="width:100%; background:#0f172a; border:1px solid #334155; color:#38bdf8; padding:0.6rem; border-radius:8px; font-family:monospace;">
                             </div>
                             <div style="grid-column: 1 / -1;">
-                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Click Secret Key (Секретный ключ подписи MD5)</label>
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">🔑 Click Secret Key (Секретный ключ подписи MD5)</label>
                                 <input type="text" name="click_secret_key" value="{click_secret_key_val}" placeholder="cLiCk_S3cr3t_K3y_..." style="width:100%; background:#0f172a; border:1px solid #334155; color:#f59e0b; padding:0.6rem; border-radius:8px; font-family:monospace;">
+                            </div>
+
+                            <!-- 4. Приветственное сообщение -->
+                            <div style="grid-column: 1 / -1; margin-top: 0.75rem; border-top: 1px solid #334155; padding-top: 1.25rem;">
+                                <h3 style="color:#34d399; font-size:1.05rem; margin-bottom:0.25rem; display:flex; align-items:center; gap:0.5rem;">📝 4. Приветственное сообщение бота (/start)</h3>
+                            </div>
+                            <div style="grid-column: 1 / -1;">
+                                <label style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.3rem; font-weight:600;">Текст стартового сообщения по умолчанию</label>
+                                <textarea name="welcome_message" rows="3" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.6rem; border-radius:8px; font-family:inherit;">{welcome_message_val}</textarea>
                             </div>
                         </div>
                         <div style="margin-top:1.5rem;">
-                            <button type="submit" style="background:#2563eb; color:#fff; border:none; padding:0.7rem 1.8rem; border-radius:8px; font-weight:600; cursor:pointer; font-size:0.95rem;">💾 Сохранить все настройки оплаты и языка</button>
+                            <button type="submit" style="background:#2563eb; color:#fff; border:none; padding:0.75rem 2rem; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.95rem; box-shadow:0 4px 12px rgba(37,99,235,0.3);">💾 Сохранить все настройки оплаты и языка</button>
                         </div>
                     </form>
                 </div>

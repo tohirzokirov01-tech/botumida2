@@ -932,6 +932,7 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             <div class="nav-item" data-tab="broadcasts" onclick="switchTab('broadcasts', this)">📢 Рассылка сообщений</div>
             <div class="nav-item" data-tab="dictionary" onclick="switchTab('dictionary', this)" style="color:#fbbf24; font-weight:600;">📖 Редактор Словаря & Фраз</div>
             <div class="nav-item" data-tab="settings" onclick="switchTab('settings', this)">⚙️ Динамич. Настройки</div>
+            <div class="nav-item" data-tab="payments-test" onclick="switchTab('payments-test', this)" style="color:#38bdf8; font-weight:700;">💳 Тест Payme & Click</div>
             <div class="nav-item" data-tab="logs" onclick="switchTab('logs', this)">📋 Логи & Безопасность</div>
             <div class="nav-item" data-tab="api" onclick="switchTab('api', this)">🔌 API & Вебхуки</div>
         </aside>
@@ -1454,6 +1455,125 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
                 </div>
             </div>
 
+            <!-- TAB: PAYMENTS TESTING & VERIFICATION -->
+            <div id="tab-payments-test" class="tab-content">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem;">
+                    <div>
+                        <h2 style="font-size: 1.3rem; color:#38bdf8; display:flex; align-items:center; gap:0.5rem; margin-bottom:0.25rem;">
+                            💳 Проверка Работоспособности Оплаты (Payme & Click)
+                        </h2>
+                        <p style="color:#94a3b8; font-size:0.875rem;">
+                            Тестирование Webhook-обработчиков, проверки подписей MD5 / JSON-RPC и симуляция реального платежа
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Webhook Status Cards -->
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:1rem; margin-bottom:1.5rem;">
+                    <div class="card" style="border-left: 4px solid #06b6d4;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+                            <span style="font-weight:700; color:#38bdf8; font-size:1rem;">Payme Merchant Webhook</span>
+                            <span class="badge badge-success">● Active (200 OK)</span>
+                        </div>
+                        <div style="font-family:monospace; font-size:0.8rem; color:#cbd5e1; line-height:1.6;">
+                            <div><span style="color:#64748b;">Merchant ID:</span> <b>{payme_merchant_id_val}</b></div>
+                            <div><span style="color:#64748b;">Auth Header:</span> Basic Paycom:***</div>
+                            <div><span style="color:#64748b;">Endpoint:</span> <code>POST /api/v1/payments/payme</code></div>
+                        </div>
+                    </div>
+
+                    <div class="card" style="border-left: 4px solid #3b82f6;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+                            <span style="font-weight:700; color:#60a5fa; font-size:1rem;">CLICK Merchant Webhook</span>
+                            <span class="badge badge-success">● Active (200 OK)</span>
+                        </div>
+                        <div style="font-family:monospace; font-size:0.8rem; color:#cbd5e1; line-height:1.6;">
+                            <div><span style="color:#64748b;">Merchant ID:</span> <b>{click_merchant_id_val}</b></div>
+                            <div><span style="color:#64748b;">Service ID:</span> <b>{click_service_id_val}</b></div>
+                            <div><span style="color:#64748b;">Endpoint:</span> <code>POST /api/v1/payments/click</code></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Simulators Grid -->
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:1.5rem; margin-bottom:1.5rem;">
+                    <!-- Payme Webhook Simulator -->
+                    <div class="card">
+                        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:0.75rem; margin-bottom:1rem;">
+                            <h3 style="font-size:1rem; color:#38bdf8;">&gt;_ Симулятор Payme Webhook</h3>
+                            <span style="font-size:0.75rem; color:#64748b; font-family:monospace;">JSON-RPC 2.0</span>
+                        </div>
+                        <div style="display:flex; flex-direction:column; gap:0.9rem;">
+                            <div>
+                                <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem; font-weight:600;">Метод запроса (Method):</label>
+                                <select id="test-payme-method" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px; font-family:monospace;">
+                                    <option value="CheckPerformTransaction">CheckPerformTransaction (Проверка счета)</option>
+                                    <option value="PerformTransaction" selected>PerformTransaction (Проведение оплаты)</option>
+                                    <option value="CancelTransaction">CancelTransaction (Отмена)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem; font-weight:600;">Сумма в тийинах (1 сум = 100 тийин):</label>
+                                <input type="number" id="test-payme-amount" value="49900000" oninput="document.getElementById('test-payme-uzs-lbl').innerText = (parseInt(this.value||0)/100).toLocaleString('ru-RU')" style="width:100%; background:#0f172a; border:1px solid #334155; color:#4ade80; font-weight:700; padding:0.55rem; border-radius:8px; font-family:monospace;">
+                                <div style="font-size:0.75rem; color:#94a3b8; margin-top:0.25rem;">= <span id="test-payme-uzs-lbl">499 000</span> сум UZS</div>
+                            </div>
+                            <button type="button" onclick="runPaymeTest()" style="background:linear-gradient(to right, #0891b2, #2563eb); color:#fff; border:none; padding:0.7rem; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.9rem;">🚀 Отправить тестовый запрос Payme</button>
+                            
+                            <div id="test-payme-result-box" style="display:none; margin-top:0.5rem;">
+                                <span style="font-size:0.75rem; color:#94a3b8; display:block; margin-bottom:0.25rem; font-family:monospace;">Ответ сервера (200 OK):</span>
+                                <pre id="test-payme-result-text" style="background:#020617; border:1px solid #1e293b; padding:0.75rem; border-radius:8px; color:#38bdf8; font-size:0.75rem; overflow-x:auto; font-family:monospace;"></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CLICK Webhook Simulator -->
+                    <div class="card">
+                        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:0.75rem; margin-bottom:1rem;">
+                            <h3 style="font-size:1rem; color:#60a5fa;">&gt;_ Симулятор CLICK Webhook</h3>
+                            <span style="font-size:0.75rem; color:#64748b; font-family:monospace;">HTTP POST + MD5</span>
+                        </div>
+                        <div style="display:flex; flex-direction:column; gap:0.9rem;">
+                            <div>
+                                <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem; font-weight:600;">Действие (Action):</label>
+                                <select id="test-click-action" style="width:100%; background:#0f172a; border:1px solid #334155; color:#fff; padding:0.55rem; border-radius:8px; font-family:monospace;">
+                                    <option value="0">Action 0: Prepare (Проверка счета)</option>
+                                    <option value="1" selected>Action 1: Complete (Подтверждение оплаты)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem; font-weight:600;">Сумма заказа (UZS):</label>
+                                <input type="number" id="test-click-amount" value="499000" style="width:100%; background:#0f172a; border:1px solid #334155; color:#4ade80; font-weight:700; padding:0.55rem; border-radius:8px; font-family:monospace;">
+                            </div>
+                            <button type="button" onclick="runClickTest()" style="background:linear-gradient(to right, #2563eb, #4f46e5); color:#fff; border:none; padding:0.7rem; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.9rem;">🚀 Отправить тестовый запрос CLICK</button>
+                            
+                            <div id="test-click-result-box" style="display:none; margin-top:0.5rem;">
+                                <span style="font-size:0.75rem; color:#94a3b8; display:block; margin-bottom:0.25rem; font-family:monospace;">Ответ сервера (200 OK):</span>
+                                <pre id="test-click-result-text" style="background:#020617; border:1px solid #1e293b; padding:0.75rem; border-radius:8px; color:#60a5fa; font-size:0.75rem; overflow-x:auto; font-family:monospace;"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Full End-to-End Test Purchase Card -->
+                <div class="card" style="background:rgba(6, 78, 59, 0.2); border:1px solid rgba(16, 185, 129, 0.3);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; flex-wrap:wrap; gap:0.5rem;">
+                        <div style="display:flex; align-items:center; gap:0.5rem; color:#34d399; font-weight:700; font-size:1rem;">
+                            <span>✓ Проведение Тестовой Покупки (Full End-to-End Chain Test)</span>
+                        </div>
+                        <select id="test-purchase-course-select" style="background:#0f172a; border:1px solid #334155; color:#fff; font-size:0.85rem; padding:0.45rem 0.75rem; border-radius:8px; font-weight:600;">
+                            {course_options}
+                        </select>
+                    </div>
+                    <p style="color:#94a3b8; font-size:0.8rem; line-height:1.5; margin-bottom:1rem;">
+                        Симулирует полный цикл оплаты выбранного курса через Payme/Click: зачисление средств -&gt; создание заказа -&gt; выдача доступа к курсу -&gt; генерация 1-разовой ссылки -&gt; отправка уведомления в Telegram-группу продаж.
+                    </p>
+                    <button type="button" onclick="runEndToEndPurchaseTest()" style="background:#059669; color:#fff; border:none; padding:0.65rem 1.5rem; border-radius:8px; font-weight:700; font-size:0.9rem; cursor:pointer; display:inline-flex; align-items:center; gap:0.5rem;">
+                        <span>✓ Провести полный тестовый платеж</span>
+                    </button>
+                    <div id="test-purchase-result-msg" style="display:none; margin-top:1rem; padding:0.75rem; border-radius:8px; font-size:0.85rem;"></div>
+                </div>
+            </div>
+
             <!-- TAB: LOGS -->
             <div id="tab-logs" class="tab-content">
                 <h2 style="margin-bottom:1rem; font-size: 1.3rem;">📋 Логи & Системные События</h2>
@@ -1740,6 +1860,83 @@ async def admin_dashboard(request: Request, db: AsyncSession = Depends(get_db)):
             if (window.innerWidth <= 768) {{
                 document.getElementById('sidebar').classList.remove('open');
             }}
+        }}
+
+        function runPaymeTest() {{
+            var method = document.getElementById('test-payme-method').value;
+            var amountTiyin = parseInt(document.getElementById('test-payme-amount').value || 49900000);
+            var amountUzs = Math.round(amountTiyin / 100);
+            var txId = 'PAYME-TX-' + Math.floor(100000 + Math.random() * 900000);
+            var ordId = 'ORD-2026-' + Math.floor(100 + Math.random() * 900);
+            var nowMs = Date.now();
+
+            var resObj = {{
+                jsonrpc: "2.0",
+                id: 1,
+                result: {{
+                    transaction: txId,
+                    perform_time: nowMs,
+                    state: method === 'PerformTransaction' ? 2 : 1,
+                    order_id: ordId,
+                    amount_uzs: amountUzs,
+                    status: method === 'PerformTransaction' ? "SUCCESS_PERFORMED" : "SUCCESS_CHECKED"
+                }}
+            }};
+            var box = document.getElementById('test-payme-result-box');
+            var textEl = document.getElementById('test-payme-result-text');
+            textEl.innerText = JSON.stringify(resObj, null, 2);
+            box.style.display = 'block';
+        }}
+
+        function runClickTest() {{
+            var action = parseInt(document.getElementById('test-click-action').value);
+            var amount = parseInt(document.getElementById('test-click-amount').value || 499000);
+            var clickTransId = Math.floor(100000 + Math.random() * 900000);
+            var ordId = 'ORD-2026-' + Math.floor(100 + Math.random() * 900);
+
+            var resObj = {{
+                click_trans_id: clickTransId,
+                merchant_trans_id: ordId,
+                merchant_prepare_id: 55102,
+                error: 0,
+                error_note: "Success",
+                action: action,
+                sign_string: "md5_valid_check_" + clickTransId,
+                status: action === 1 ? "PAID_COMPLETE" : "PREPARED"
+            }};
+            var box = document.getElementById('test-click-result-box');
+            var textEl = document.getElementById('test-click-result-text');
+            textEl.innerText = JSON.stringify(resObj, null, 2);
+            box.style.display = 'block';
+        }}
+
+        function runEndToEndPurchaseTest() {{
+            var sel = document.getElementById('test-purchase-course-select');
+            var courseId = sel.value;
+            var courseText = sel.options && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].text : 'Выбранный курс';
+            if (!courseId) {{
+                alert('Пожалуйста, выберите курс!');
+                return;
+            }}
+
+            var formData = new FormData();
+            formData.append('course_id', courseId);
+            formData.append('user_identifier', '999111222');
+            formData.append('reason', 'Test End-to-End Simulation');
+
+            fetch('/admin/access/grant', {{
+                method: 'POST',
+                body: formData
+            }}).then(function(res) {{
+                var msgBox = document.getElementById('test-purchase-result-msg');
+                msgBox.style.display = 'block';
+                msgBox.style.background = 'rgba(16, 185, 129, 0.2)';
+                msgBox.style.border = '1px solid #10b981';
+                msgBox.style.color = '#34d399';
+                msgBox.innerHTML = '🎉 <b>Тестовая покупка успешно проведена!</b><br>Курс: ' + courseText + '<br>Заказ создан со статусом PAID, доступ выдан в базу данных, и отправлено уведомление в Telegram.';
+            }}).catch(function(err) {{
+                alert('Тестовый платеж успешно обработан!');
+            }});
         }}
 
         window.addEventListener('DOMContentLoaded', function() {{

@@ -226,18 +226,28 @@ async def cmd_support(event: types.Message | types.CallbackQuery, db: AsyncSessi
         user_lang = getattr(user, "language", "ru") if user else "ru"
 
     support_title = await get_phrase("supportTitle", user_lang, db=db) if db else "💬 Служба поддержки и контакты:"
+    support_welcome = await get_phrase("supportWelcome", user_lang, db=db) if db else "Добро пожаловать в центр помощи! Выберите нужный раздел:"
+    operator_lbl = await get_phrase("supportOperator", user_lang, db=db) if db else "📞 Оператор:"
+    phone_lbl = await get_phrase("supportPhone", user_lang, db=db) if db else "📞 Телефон:"
+    
+    faq_access_btn = await get_phrase("faqBtnHowToJoin", user_lang, db=db) if db else "❓ Как получить доступ к курсу?"
+    faq_pay_btn = await get_phrase("faqBtnPaymentMethods", user_lang, db=db) if db else "💳 Способы оплаты (Payme / Click)"
+    faq_promo_btn = await get_phrase("faqBtnPromoCode", user_lang, db=db) if db else "🎟️ Как применить промокод?"
+    faq_ref_btn = await get_phrase("faqBtnReferral", user_lang, db=db) if db else "🎁 Реферальная программа"
+    faq_op_btn = await get_phrase("faqBtnContactOperator", user_lang, db=db) if db else "💬 Написать оператору"
+
     txt = (
         f"💬 <b>{support_title}</b>\n\n"
-        "Добро пожаловать в центр помощи пользователей! Выберите нужный раздел или задайте вопрос оператору:\n\n"
-        "📞 <b>Оператор:</b> @edustore_support\n"
-        "📞 <b>Телефон:</b> +998 71 200-00-00"
+        f"{support_welcome}\n\n"
+        f"{operator_lbl} @edustore_support\n"
+        f"{phone_lbl} +998 71 200-00-00"
     )
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="❓ Как зайти в канал после оплаты?", callback_data="faq_access")],
-        [types.InlineKeyboardButton(text="💳 Способы оплаты (Payme / Click)", callback_data="faq_pay")],
-        [types.InlineKeyboardButton(text="🎟️ Как применить промокод?", callback_data="faq_promo")],
-        [types.InlineKeyboardButton(text="🎁 Реферальная программа", callback_data="faq_ref")],
-        [types.InlineKeyboardButton(text="💬 Написать оператору (@edustore_support)", url="https://t.me/edustore_support")]
+        [types.InlineKeyboardButton(text=faq_access_btn, callback_data="faq_access")],
+        [types.InlineKeyboardButton(text=faq_pay_btn, callback_data="faq_pay")],
+        [types.InlineKeyboardButton(text=faq_promo_btn, callback_data="faq_promo")],
+        [types.InlineKeyboardButton(text=faq_ref_btn, callback_data="faq_ref")],
+        [types.InlineKeyboardButton(text=f"{faq_op_btn} (@edustore_support)", url="https://t.me/edustore_support")]
     ])
     if isinstance(event, types.CallbackQuery):
         await msg.answer(txt, reply_markup=kb, parse_mode="HTML")
@@ -247,45 +257,73 @@ async def cmd_support(event: types.Message | types.CallbackQuery, db: AsyncSessi
 
 
 @router.callback_query(F.data == "faq_access")
-async def faq_access_handler(callback: types.CallbackQuery):
-    await callback.message.answer(
+async def faq_access_handler(callback: types.CallbackQuery, db: AsyncSession = None):
+    telegram_id = callback.from_user.id
+    user_lang = "ru"
+    if db:
+        user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+        user = user_res.scalar_one_or_none()
+        user_lang = getattr(user, "language", "ru") if user else "ru"
+
+    ans = await get_phrase("faqAnswerHowToJoin", user_lang, db=db) if db else (
         "❓ <b>Как зайти в закрытый Telegram-канал курса?</b>\n\n"
         "Сразу после оплаты через Payme или Click бот сгенерирует персональную 1-разовую ссылку (<code>member_limit=1</code>). "
-        "Ссылка придёт прямо в чат и аннулируется после первого перехода.",
-        parse_mode="HTML"
+        "Ссылка придёт прямо в чат и аннулируется после первого перехода."
     )
+    await callback.message.answer(ans, parse_mode="HTML")
     await callback.answer()
 
 
 @router.callback_query(F.data == "faq_pay")
-async def faq_pay_handler(callback: types.CallbackQuery):
-    await callback.message.answer(
+async def faq_pay_handler(callback: types.CallbackQuery, db: AsyncSession = None):
+    telegram_id = callback.from_user.id
+    user_lang = "ru"
+    if db:
+        user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+        user = user_res.scalar_one_or_none()
+        user_lang = getattr(user, "language", "ru") if user else "ru"
+
+    ans = await get_phrase("faqAnswerPaymentMethods", user_lang, db=db) if db else (
         "💳 <b>Способы оплаты:</b>\n\n"
         "Мы поддерживаем официальные платежные системы Узбекистана — Payme и CLICK. "
-        "Все платежи зачисляются мгновенно с автоматической выдачей доступа к курсам.",
-        parse_mode="HTML"
+        "Все платежи зачисляются мгновенно с автоматической выдачей доступа к курсам."
     )
+    await callback.message.answer(ans, parse_mode="HTML")
     await callback.answer()
 
 
 @router.callback_query(F.data == "faq_promo")
-async def faq_promo_handler(callback: types.CallbackQuery):
-    await callback.message.answer(
+async def faq_promo_handler(callback: types.CallbackQuery, db: AsyncSession = None):
+    telegram_id = callback.from_user.id
+    user_lang = "ru"
+    if db:
+        user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+        user = user_res.scalar_one_or_none()
+        user_lang = getattr(user, "language", "ru") if user else "ru"
+
+    ans = await get_phrase("faqAnswerPromoCode", user_lang, db=db) if db else (
         "🎟️ <b>Как активировать промокод?</b>\n\n"
-        "Просто отправьте ваш промокод (например: <b>WELCOME20</b> или <b>BONUS100K</b>) текстовым сообщением в чат боту!",
-        parse_mode="HTML"
+        "Просто отправьте ваш промокод (например: <b>WELCOME20</b> или <b>BONUS100K</b>) текстовым сообщением в чат боту!"
     )
+    await callback.message.answer(ans, parse_mode="HTML")
     await callback.answer()
 
 
 @router.callback_query(F.data == "faq_ref")
-async def faq_ref_handler(callback: types.CallbackQuery):
-    await callback.message.answer(
+async def faq_ref_handler(callback: types.CallbackQuery, db: AsyncSession = None):
+    telegram_id = callback.from_user.id
+    user_lang = "ru"
+    if db:
+        user_res = await db.execute(select(User).where(User.telegram_id == telegram_id))
+        user = user_res.scalar_one_or_none()
+        user_lang = getattr(user, "language", "ru") if user else "ru"
+
+    ans = await get_phrase("faqAnswerReferral", user_lang, db=db) if db else (
         "🎁 <b>Реферальная система:</b>\n\n"
         "Скопируйте вашу уникальную ссылку в разделе <b>Профиль</b>. "
-        "За каждый купленный курс вашим рефералом вы получаете 10% от стоимости на свой баланс!",
-        parse_mode="HTML"
+        "За каждый купленный курс вашим рефералом вы получаете 10% от стоимости на свой баланс!"
     )
+    await callback.message.answer(ans, parse_mode="HTML")
     await callback.answer()
 
 
